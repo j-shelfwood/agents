@@ -10,7 +10,7 @@ import { exec, spawn } from 'child_process';
 import { promisify } from 'util';
 
 const execAsync = promisify(exec);
-const AGENT_CMD = process.env.HOME + '/.shelfwood/agent/agent';
+const AGENT_CMD = process.env.HOME + '/projects/shelfwood-agents/agent/agent';
 
 /**
  * Validate session name format
@@ -613,7 +613,7 @@ class AgentMCPServer {
       } catch {}
 
       // Check metadata directory
-      const metadataDir = process.env.HOME + '/.shelfwood/agent/metadata';
+      const metadataDir = process.env.HOME + '/projects/shelfwood-agents/agent/metadata';
       try {
         await fs.access(metadataDir);
         checks.metadata_dir_exists = true;
