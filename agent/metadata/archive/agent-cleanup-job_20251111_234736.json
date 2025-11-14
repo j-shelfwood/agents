@@ -1,0 +1,19 @@
+{
+  "session_id": "agent-cleanup-job",
+  "project_dir": "/Users/shelfwood/projects/prj-more-apartments",
+  "task_file": "/Users/shelfwood/projects/prj-more-apartments/.claude/tasks/IMPLEMENT-CLEANUP-JOB.md",
+  "spawned_at": "2025-11-11T22:41:15Z",
+  "spawned_by": "manual",
+  "status": "stopped",
+  "importance": "normal",
+  "tags": [],
+  "pid": 94087,
+  "last_activity": "2025-11-11T22:41:15Z",
+  "health_checks": {
+    "last_check": "2025-11-11T22:41:15Z",
+    "consecutive_failures": 0
+  },
+  "notes": "",
+  "resume_chain": [],
+  "stopped_at": "2025-11-11T22:47:36Z"
+}

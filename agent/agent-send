@@ -1,0 +1,190 @@
+#!/bin/bash
+# Send Input or Keypresses to Agent Session
+# Supports text messages and raw keypress injection via tmux
+
+set -e
+
+# Source metadata utilities
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/agent-metadata"
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+NC='\033[0m'
+
+# Usage function
+usage() {
+    cat << EOF
+Usage: agent send <session-name> [OPTIONS] [message]
+
+Send text messages or raw keypresses to a running copilot agent session.
+
+OPTIONS:
+  -k, --key <key>    Send raw keypress (can be repeated for sequences)
+                     Special keys: Enter, Tab, Up, Down, Left, Right,
+                     Space, Escape, BSpace, C-c (Ctrl+C), etc.
+  -h, --help         Show this help message
+
+MODES:
+
+Text Mode (default):
+  agent send <session> "message"
+  → Sends text followed by Enter
+
+Keypress Mode (-k flag):
+  agent send <session> -k y
+  → Sends 'y' without Enter
+
+  agent send <session> -k y -k Enter
+  → Sends 'y' followed by Enter
+
+  agent send <session> -k Down -k Down -k Enter
+  → Navigate menu down twice, then select
+
+EXAMPLES:
+
+# Respond to text prompt
+agent send agent-myapp-1234 "Use Pest framework"
+
+# Answer yes/no prompt
+agent send agent-myapp-1234 -k y
+agent send agent-myapp-1234 -k n
+
+# Permission prompt: "Allow reading path? (y/n)"
+agent send agent-myapp-1234 -k y -k Enter
+
+# Select menu option 2
+agent send agent-myapp-1234 -k 2 -k Enter
+
+# Navigate menu with arrows
+agent send agent-myapp-1234 -k Down -k Down -k Enter
+
+# Accept default [Y/n] prompt
+agent send agent-myapp-1234 -k Enter
+
+# Send Tab for completion
+agent send agent-myapp-1234 -k Tab
+
+# Interrupt with Ctrl+C
+agent send agent-myapp-1234 -k C-c
+
+COMMON SPECIAL KEYS:
+  Enter, Return, C-m    → Enter/Return key
+  Tab, C-i              → Tab key
+  Escape, C-[           → Escape key
+  Space                 → Space bar
+  Up, Down, Left, Right → Arrow keys
+  BSpace, C-h           → Backspace
+  DC                    → Delete
+  C-c, C-d, C-z         → Control key combinations
+  F1-F12                → Function keys
+  Home, End             → Home/End keys
+  PPage, NPage          → Page Up/Down
+EOF
+    exit 0
+}
+
+# Parse arguments
+if [[ $# -lt 1 ]]; then
+    usage
+fi
+
+SESSION_NAME="$1"
+shift
+
+# Validate session name format
+if ! validate_session_name "$SESSION_NAME"; then
+    exit 1
+fi
+
+# Parse options
+KEYS=()
+MESSAGE=""
+KEYPRESS_MODE=false
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -k|--key)
+            KEYPRESS_MODE=true
+            if [[ -z "$2" || "$2" == -* ]]; then
+                echo -e "${RED}Error: --key requires an argument${NC}"
+                exit 1
+            fi
+            KEYS+=("$2")
+            shift 2
+            ;;
+        -h|--help)
+            usage
+            ;;
+        -*)
+            echo -e "${RED}Error: Unknown option: $1${NC}"
+            usage
+            ;;
+        *)
+            # Remaining argument is the message (text mode)
+            MESSAGE="$1"
+            shift
+            break
+            ;;
+    esac
+done
+
+# Validate mode
+if [[ "$KEYPRESS_MODE" == true && -n "$MESSAGE" ]]; then
+    echo -e "${RED}Error: Cannot mix --key mode with text message${NC}"
+    echo "Use either: agent send <session> \"text\" OR agent send <session> -k key"
+    exit 1
+fi
+
+if [[ "$KEYPRESS_MODE" == false && -z "$MESSAGE" ]]; then
+    echo -e "${RED}Error: No message or keys provided${NC}"
+    usage
+fi
+
+# Verify session exists
+if ! tmux has-session -t "$SESSION_NAME" 2>/dev/null; then
+    echo -e "${RED}Error: Session '$SESSION_NAME' not found${NC}"
+    exit 1
+fi
+
+echo -e "${BLUE}╔════════════════════════════════════════════════════════════════╗${NC}"
+echo -e "${BLUE}║${NC}  ${GREEN}Sending to Agent Session${NC}                               ${BLUE}║${NC}"
+echo -e "${BLUE}╚════════════════════════════════════════════════════════════════╝${NC}"
+echo ""
+
+if [[ "$KEYPRESS_MODE" == true ]]; then
+    # Keypress mode: Send raw keys
+    echo -e "${CYAN}Session:${NC}   $SESSION_NAME"
+    echo -e "${CYAN}Mode:${NC}      Keypress"
+    echo -e "${CYAN}Keys:${NC}      ${KEYS[*]}"
+    echo ""
+
+    # Send each key in sequence
+    for key in "${KEYS[@]}"; do
+        tmux send-keys -t "$SESSION_NAME" "$key"
+    done
+
+    echo -e "${GREEN}✓${NC} Keypresses sent"
+else
+    # Text mode: Send message + Enter (need double-Enter for copilot CLI)
+    echo -e "${CYAN}Session:${NC}   $SESSION_NAME"
+    echo -e "${CYAN}Mode:${NC}      Text"
+    echo -e "${CYAN}Message:${NC}   $MESSAGE"
+    echo ""
+
+    # Send message followed by Enter (copilot needs 2 Enters)
+    tmux send-keys -t "$SESSION_NAME" "$MESSAGE" C-m
+    sleep 1
+    tmux send-keys -t "$SESSION_NAME" Enter
+
+    echo -e "${GREEN}✓${NC} Message sent"
+fi
+
+echo ""
+echo -e "${YELLOW}Monitor response:${NC}"
+echo -e "  ${CYAN}agent read $SESSION_NAME${NC}"
+echo -e "  ${CYAN}agent status $SESSION_NAME${NC}"
+echo ""

@@ -1,0 +1,98 @@
+#!/bin/bash
+# Quick Approval/Denial for Agent Prompts
+# Convenience wrapper for responding to yes/no permission prompts
+
+set -e
+
+# Source metadata utilities
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/agent-metadata"
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+NC='\033[0m'
+
+usage() {
+    cat << 'EOF'
+Usage: agent approve <session-name> [y|n|yes|no]
+
+Quick approval/denial for agent agent permission prompts.
+
+ARGUMENTS:
+  session-name   The tmux session name
+  response       y, n, yes, or no (default: y)
+
+EXAMPLES:
+  # Approve permission prompt
+  agent approve agent myapp-1234 y
+  agent approve agent myapp-1234 yes
+
+  # Deny permission prompt
+  agent approve agent myapp-1234 n
+  agent approve agent myapp-1234 no
+
+  # Default to yes
+  agent approve agent myapp-1234
+
+COMMON USE CASES:
+  "Allow reading path? (y/n)" → agent approve <session> y
+  "Continue? (y/n)"           → agent approve <session> y
+  "Proceed with changes?"     → agent approve <session> yes
+EOF
+    exit 0
+}
+
+if [[ $# -lt 1 || "$1" == "-h" || "$1" == "--help" ]]; then
+    usage
+fi
+
+SESSION_NAME="$1"
+RESPONSE="${2:-y}"
+
+# Validate session name format
+if ! validate_session_name "$SESSION_NAME"; then
+    exit 1
+fi
+
+# Normalize response
+case "$RESPONSE" in
+    y|Y|yes|Yes|YES)
+        KEY="y"
+        DISPLAY="Yes"
+        ;;
+    n|N|no|No|NO)
+        KEY="n"
+        DISPLAY="No"
+        ;;
+    *)
+        echo -e "${RED}Error: Invalid response '$RESPONSE'. Use: y, n, yes, or no${NC}"
+        exit 1
+        ;;
+esac
+
+# Verify session exists
+if ! tmux has-session -t "$SESSION_NAME" 2>/dev/null; then
+    echo -e "${RED}Error: Session '$SESSION_NAME' not found${NC}"
+    exit 1
+fi
+
+echo -e "${BLUE}╔════════════════════════════════════════════════════════════════╗${NC}"
+echo -e "${BLUE}║${NC}  ${GREEN}Approving Agent Prompt${NC}                                    ${BLUE}║${NC}"
+echo -e "${BLUE}╚════════════════════════════════════════════════════════════════╝${NC}"
+echo ""
+echo -e "${CYAN}Session:${NC}   $SESSION_NAME"
+echo -e "${CYAN}Response:${NC}  $DISPLAY"
+echo ""
+
+# Send key + Enter (need double-Enter for copilot CLI)
+tmux send-keys -t "$SESSION_NAME" "$KEY" C-m
+sleep 1
+tmux send-keys -t "$SESSION_NAME" Enter
+
+echo -e "${GREEN}✓${NC} Response sent"
+echo ""
+echo -e "${YELLOW}Monitor:${NC}  agent read $SESSION_NAME"
+echo ""

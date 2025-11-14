@@ -1,0 +1,41 @@
+#!/bin/bash
+# Attach to Agent Session
+# Connects to interactive tmux session
+
+set -e
+
+# Source metadata utilities
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/agent-metadata"
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
+
+SESSION_NAME="$1"
+
+if [[ -z "$SESSION_NAME" ]]; then
+    echo "Usage: agent attach <session-name>"
+    echo ""
+    echo "Available sessions:"
+    agent list
+    exit 1
+fi
+
+# Validate session name format
+if ! validate_session_name "$SESSION_NAME"; then
+    exit 1
+fi
+
+if ! tmux has-session -t "$SESSION_NAME" 2>/dev/null; then
+    echo -e "${RED}Error: Session '$SESSION_NAME' not found${NC}"
+    exit 1
+fi
+
+echo -e "${GREEN}Attaching to $SESSION_NAME...${NC}"
+echo -e "${YELLOW}Press Ctrl+B then D to detach${NC}"
+echo ""
+sleep 1
+
+tmux attach -t "$SESSION_NAME"

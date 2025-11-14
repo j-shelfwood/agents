@@ -1,0 +1,152 @@
+#!/usr/bin/env bash
+# agent cleanup - Clean up stale sessions and archived metadata
+
+set -e
+
+# Source metadata utilities
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/agent-metadata"
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+NC='\033[0m'
+
+usage() {
+    cat << EOF
+agent cleanup - Clean up stale sessions and metadata
+
+USAGE:
+  agent cleanup [OPTIONS]
+
+OPTIONS:
+  --force            Clean up critical importance sessions too
+  --archive-days N   Delete archived metadata older than N days (default: 30)
+  --dry-run          Show what would be cleaned without doing it
+  -h, --help         Show this help
+
+EXAMPLES:
+  agent cleanup                    # Clean stale sessions, keep last 30 days
+  agent cleanup --archive-days 7   # More aggressive cleanup
+  agent cleanup --dry-run          # Preview cleanup actions
+  agent cleanup --force            # Include critical sessions
+
+WHAT IT CLEANS:
+  - Zombie/crashed sessions (archives metadata)
+  - Sessions with missing tmux (archives metadata)
+  - Archived metadata older than N days (deletes)
+  - Skips 'critical' importance unless --force
+EOF
+    exit 0
+}
+
+# Parse arguments
+FORCE=false
+ARCHIVE_DAYS=30
+DRY_RUN=false
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --force)
+            FORCE=true
+            shift
+            ;;
+        --archive-days)
+            ARCHIVE_DAYS="$2"
+            shift 2
+            ;;
+        --dry-run)
+            DRY_RUN=true
+            shift
+            ;;
+        -h|--help)
+            usage
+            ;;
+        *)
+            echo -e "${RED}Error: Unknown option: $1${NC}"
+            usage
+            ;;
+    esac
+done
+
+echo -e "${BLUE}╔════════════════════════════════════════════════════════════════╗${NC}"
+echo -e "${BLUE}║${NC}  ${GREEN}Agent Cleanup${NC}                                              ${BLUE}║${NC}"
+echo -e "${BLUE}╚════════════════════════════════════════════════════════════════╝${NC}"
+echo ""
+
+if [[ "$DRY_RUN" == "true" ]]; then
+    echo -e "${YELLOW}DRY RUN MODE - No changes will be made${NC}"
+    echo ""
+fi
+
+# Cleanup stale sessions
+echo -e "${CYAN}Scanning for stale sessions...${NC}"
+
+KILLED=0
+SKIPPED=0
+
+list_metadata | while read -r session; do
+    [[ -z "$session" ]] && continue
+
+    STATE=$(detect_session_state "$session")
+    IMPORTANCE=$(get_metadata "$session" "importance")
+
+    if [[ "$STATE" == "missing" || "$STATE" == "zombie" || "$STATE" == "crashed" ]]; then
+        if [[ "$IMPORTANCE" == "critical" && "$FORCE" != "true" ]]; then
+            echo -e "  ${YELLOW}SKIP${NC} $session (critical importance, use --force)"
+            ((SKIPPED++))
+            continue
+        fi
+
+        echo -e "  ${RED}CLEAN${NC} $session (state: $STATE)"
+
+        if [[ "$DRY_RUN" != "true" ]]; then
+            # Kill tmux session if it exists
+            if tmux has-session -t "$session" 2>/dev/null; then
+                tmux kill-session -t "$session" 2>/dev/null || true
+            fi
+
+            # Archive metadata
+            archive_metadata "$session"
+        fi
+
+        ((KILLED++))
+    fi
+done
+
+echo ""
+echo -e "${CYAN}Session cleanup: ${GREEN}$KILLED${NC} cleaned, ${YELLOW}$SKIPPED${NC} skipped"
+
+# Clean old archived metadata
+echo ""
+echo -e "${CYAN}Cleaning archived metadata older than $ARCHIVE_DAYS days...${NC}"
+
+DELETED=0
+
+if [[ -d "$METADATA_ARCHIVE_DIR" ]]; then
+    while IFS= read -r file; do
+        [[ -z "$file" ]] && continue
+
+        BASENAME=$(basename "$file")
+        echo -e "  ${RED}DELETE${NC} $BASENAME"
+
+        if [[ "$DRY_RUN" != "true" ]]; then
+            rm -f "$file"
+        fi
+
+        ((DELETED++))
+    done < <(find "$METADATA_ARCHIVE_DIR" -name "*.json" -type f -mtime +$ARCHIVE_DAYS 2>/dev/null || true)
+fi
+
+echo ""
+echo -e "${CYAN}Archived metadata cleanup: ${GREEN}$DELETED${NC} deleted"
+echo ""
+
+if [[ "$DRY_RUN" == "true" ]]; then
+    echo -e "${YELLOW}DRY RUN COMPLETE - Run without --dry-run to apply changes${NC}"
+else
+    echo -e "${GREEN}✓ Cleanup complete${NC}"
+fi
+echo ""

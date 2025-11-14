@@ -1,0 +1,19 @@
+{
+  "session_id": "agent-prj-more-apartments-1762944082",
+  "project_dir": "/Users/shelfwood/Projects/prj-more-apartments",
+  "task_file": "/Users/shelfwood/Projects/prj-more-apartments/.claude/tasks/repository-structure-audit.md",
+  "spawned_at": "2025-11-12T10:41:25Z",
+  "spawned_by": "manual",
+  "status": "stopped",
+  "importance": "normal",
+  "tags": [],
+  "pid": 67358,
+  "last_activity": "2025-11-12T10:41:25Z",
+  "health_checks": {
+    "last_check": "2025-11-12T10:41:25Z",
+    "consecutive_failures": 0
+  },
+  "notes": "",
+  "resume_chain": [],
+  "stopped_at": "2025-11-12T10:52:04Z"
+}

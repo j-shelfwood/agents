@@ -1,0 +1,77 @@
+#!/bin/bash
+# agent kill - Terminate Agent Session
+# NON-INTERACTIVE: Kills immediately, no confirmation
+
+set -e
+
+# Source metadata utilities
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/agent-metadata"
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+CYAN='\033[0;36m'
+NC='\033[0m'
+
+usage() {
+    cat << EOF
+agent kill - Terminate agent session
+
+USAGE:
+  agent kill <session-name>
+
+ARGUMENTS:
+  session-name   Name of the session to terminate
+
+EXAMPLES:
+  agent kill agent-myapp-1234
+
+BEHAVIOR:
+  - Terminates immediately (non-interactive)
+  - No confirmation prompt
+  - Returns success if session was killed
+  - Returns error if session doesn't exist
+EOF
+    exit 0
+}
+
+SESSION_NAME="$1"
+
+if [[ -z "$SESSION_NAME" || "$SESSION_NAME" == "-h" || "$SESSION_NAME" == "--help" ]]; then
+    usage
+fi
+
+# Validate session name format
+if ! validate_session_name "$SESSION_NAME"; then
+    exit 1
+fi
+
+# Check if session exists
+if ! tmux has-session -t "$SESSION_NAME" 2>/dev/null; then
+    echo -e "${RED}Error: Session '$SESSION_NAME' not found${NC}"
+    exit 1
+fi
+
+# Archive metadata if exists
+if has_metadata "$SESSION_NAME"; then
+    # Update status before archiving
+    update_metadata "$SESSION_NAME" "status" "stopped"
+    TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+    update_metadata "$SESSION_NAME" "stopped_at" "$TIMESTAMP"
+
+    # Archive the metadata
+    archive_metadata "$SESSION_NAME"
+    METADATA_ARCHIVED=true
+else
+    METADATA_ARCHIVED=false
+fi
+
+# Kill session immediately
+tmux kill-session -t "$SESSION_NAME"
+
+echo -e "${GREEN}✓${NC} Session '${CYAN}$SESSION_NAME${NC}' terminated"
+
+if [[ "$METADATA_ARCHIVED" == "true" ]]; then
+    echo -e "${YELLOW}ℹ${NC} Session metadata archived to: ${CYAN}~/.shelfwood/agent/metadata/archive/${NC}"
+fi

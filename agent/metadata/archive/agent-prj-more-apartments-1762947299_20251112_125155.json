@@ -1,0 +1,19 @@
+{
+  "session_id": "agent-prj-more-apartments-1762947299",
+  "project_dir": "/Users/shelfwood/Projects/prj-more-apartments",
+  "task_file": "/Users/shelfwood/Projects/prj-more-apartments/.claude/tasks/test-coverage-organization-audit.md",
+  "spawned_at": "2025-11-12T11:35:01Z",
+  "spawned_by": "manual",
+  "status": "stopped",
+  "importance": "normal",
+  "tags": [],
+  "pid": 90546,
+  "last_activity": "2025-11-12T11:35:01Z",
+  "health_checks": {
+    "last_check": "2025-11-12T11:35:01Z",
+    "consecutive_failures": 0
+  },
+  "notes": "",
+  "resume_chain": [],
+  "stopped_at": "2025-11-12T11:51:55Z"
+}

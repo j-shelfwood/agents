@@ -1,0 +1,47 @@
+#!/bin/bash
+# Read Agent Output
+# Captures and displays tmux session output
+
+set -e
+
+# Source metadata utilities
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/agent-metadata"
+
+RED='\033[0;31m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m'
+
+SESSION_NAME="$1"
+LINES="${2:-100}"
+
+if [[ -z "$SESSION_NAME" ]]; then
+    echo "Usage: agent read <session-name> [lines]"
+    echo ""
+    echo "Examples:"
+    echo "  agent read my-session       # Last 100 lines"
+    echo "  agent read my-session 200   # Last 200 lines"
+    exit 1
+fi
+
+# Validate session name format
+if ! validate_session_name "$SESSION_NAME"; then
+    exit 1
+fi
+
+if ! tmux has-session -t "$SESSION_NAME" 2>/dev/null; then
+    echo -e "${RED}Error: Session '$SESSION_NAME' not found${NC}"
+    exit 1
+fi
+
+echo -e "${BLUE}════════════════════════════════════════════════════════════════${NC}"
+echo -e "${YELLOW}Session: $SESSION_NAME (last $LINES lines)${NC}"
+echo -e "${BLUE}════════════════════════════════════════════════════════════════${NC}"
+echo ""
+
+# Capture and display output
+tmux capture-pane -t "$SESSION_NAME" -p -S -"$LINES"
+
+echo ""
+echo -e "${BLUE}════════════════════════════════════════════════════════════════${NC}"

@@ -1,0 +1,19 @@
+{
+  "session_id": "agent-stayci_com-1762877124",
+  "project_dir": "/Users/shelfwood/Projects/stayci.com",
+  "task_file": "/tmp/test-metadata-lifecycle.md",
+  "spawned_at": "2025-11-11T16:05:26Z",
+  "spawned_by": "manual",
+  "status": "stopped",
+  "importance": "normal",
+  "tags": [],
+  "pid": 41694,
+  "last_activity": "2025-11-11T16:05:26Z",
+  "health_checks": {
+    "last_check": "2025-11-11T16:05:26Z",
+    "consecutive_failures": 0
+  },
+  "notes": "Resumed from test-meta-final (originally spawned 1h 0m ago)",
+  "resume_chain": [],
+  "stopped_at": "2025-11-11T16:06:07Z"
+}

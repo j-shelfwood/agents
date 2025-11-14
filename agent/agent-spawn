@@ -1,0 +1,219 @@
+#!/bin/bash
+# agent spawn - Spawn Agent Session
+# Creates detached tmux session with copilot running in full autonomy mode
+#
+# NON-INTERACTIVE: No prompts, no confirmations
+
+set -e
+
+# Source metadata utilities
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/agent-metadata"
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+NC='\033[0m'
+
+usage() {
+    cat << EOF
+agent spawn - Spawn new agent session
+
+USAGE:
+  agent spawn <project-dir> [task-file] [--session <name>]
+
+ARGUMENTS:
+  project-dir   Path to project directory
+  task-file     Optional: Task file to reference in initial prompt
+
+OPTIONS:
+  --session <name>   Custom session name (default: auto-generated)
+  -h, --help         Show this help
+
+EXAMPLES:
+  agent spawn ~/projects/myapp
+  agent spawn ~/projects/myapp tasks/refactor.md
+  agent spawn ~/projects/myapp tasks/refactor.md --session my-task
+
+BEHAVIOR:
+  - Creates detached tmux session
+  - Runs copilot with --allow-all-tools --allow-all-paths
+  - Git operations requiring confirmation: commit, push, merge, rebase, reset
+  - Prepends system instructions from Obsidian vault automatically
+  - Sends combined prompt (system instructions + task) if task-file provided
+  - Returns immediately (non-blocking)
+EOF
+    exit 0
+}
+
+# Parse arguments
+PROJECT_DIR=""
+TASK_FILE=""
+SESSION_NAME=""
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -h|--help)
+            usage
+            ;;
+        --session)
+            SESSION_NAME="$2"
+            shift 2
+            ;;
+        *)
+            if [[ -z "$PROJECT_DIR" ]]; then
+                PROJECT_DIR="$1"
+            elif [[ -z "$TASK_FILE" ]]; then
+                TASK_FILE="$1"
+            else
+                echo -e "${RED}Error: Unknown argument: $1${NC}"
+                exit 1
+            fi
+            shift
+            ;;
+    esac
+done
+
+if [[ -z "$PROJECT_DIR" ]]; then
+    echo -e "${RED}Error: project-dir required${NC}"
+    echo "Usage: agent spawn <project-dir> [task-file]"
+    exit 1
+fi
+
+# Resolve absolute paths
+if [[ "$PROJECT_DIR" != /* ]]; then
+    PROJECT_DIR="$(cd "$PROJECT_DIR" 2>/dev/null && pwd)"
+fi
+
+if [[ -n "$TASK_FILE" ]] && [[ "$TASK_FILE" != /* ]]; then
+    CWD="$(pwd)"
+    TASK_DIR="$(dirname "$TASK_FILE")"
+    TASK_NAME="$(basename "$TASK_FILE")"
+    if [[ -d "$CWD/$TASK_DIR" ]]; then
+        TASK_FILE="$(cd "$CWD/$TASK_DIR" && pwd)/$TASK_NAME"
+    else
+        TASK_FILE="$CWD/$TASK_FILE"
+    fi
+fi
+
+# Validate
+if [[ ! -d "$PROJECT_DIR" ]]; then
+    echo -e "${RED}Error: Project directory not found: $PROJECT_DIR${NC}"
+    exit 1
+fi
+
+if [[ -n "$TASK_FILE" ]] && [[ ! -f "$TASK_FILE" ]]; then
+    echo -e "${RED}Error: Task file not found: $TASK_FILE${NC}"
+    exit 1
+fi
+
+# Validate project directory is safe
+# Prevent targeting sensitive system directories
+case "$PROJECT_DIR" in
+    /|/bin|/sbin|/etc|/usr|/System|/Library|/private)
+        echo -e "${RED}Error: Cannot spawn agent in system directory: $PROJECT_DIR${NC}"
+        exit 1
+        ;;
+    $HOME/.shelfwood/agent*)
+        echo -e "${RED}Error: Cannot spawn agent in agent infrastructure directory${NC}"
+        exit 1
+        ;;
+esac
+
+# Warn if targeting home directory root
+if [[ "$PROJECT_DIR" == "$HOME" ]]; then
+    echo -e "${YELLOW}Warning: Spawning agent in home directory root${NC}"
+    echo -e "${YELLOW}This gives agent access to all your files. Consider using a specific project directory.${NC}"
+    # Don't exit, just warn
+fi
+
+# Generate session name if not provided
+if [[ -z "$SESSION_NAME" ]]; then
+    PROJECT_NAME=$(basename "$PROJECT_DIR")
+    TIMESTAMP=$(date +%s)
+    SESSION_NAME="agent-${PROJECT_NAME}-${TIMESTAMP}"
+fi
+
+# Normalize session name (tmux converts dots to underscores)
+SESSION_NAME=$(echo "$SESSION_NAME" | tr '.' '_')
+
+# Validate session name format
+if ! validate_session_name "$SESSION_NAME"; then
+    exit 1
+fi
+
+# Check if session already exists
+if tmux has-session -t "$SESSION_NAME" 2>/dev/null; then
+    echo -e "${RED}Error: Session '$SESSION_NAME' already exists${NC}"
+    exit 1
+fi
+
+# Display info
+echo -e "${BLUE}╔════════════════════════════════════════════════════════════════╗${NC}"
+echo -e "${BLUE}║${NC}  ${GREEN}Spawning Agent${NC}                                              ${BLUE}║${NC}"
+echo -e "${BLUE}╚════════════════════════════════════════════════════════════════╝${NC}"
+echo ""
+echo -e "${CYAN}Session:${NC}   $SESSION_NAME"
+echo -e "${CYAN}Project:${NC}   $PROJECT_DIR"
+if [[ -n "$TASK_FILE" ]]; then
+    echo -e "${CYAN}Task:${NC}      $TASK_FILE"
+fi
+echo ""
+
+# Create session with full autonomy
+tmux new-session -d -s "$SESSION_NAME" "copilot --add-dir \"$PROJECT_DIR\" --allow-all-tools --allow-all-paths \
+  --deny-tool 'shell(git commit)' \
+  --deny-tool 'shell(git push)' \
+  --deny-tool 'shell(git merge)' \
+  --deny-tool 'shell(git rebase)' \
+  --deny-tool 'shell(git reset)' \
+  --deny-tool 'shell(gh pr merge)' \
+  --deny-tool 'shell(gh pr create)'"
+sleep 2
+
+# Create metadata file
+PANE_PID=$(tmux list-panes -t "$SESSION_NAME" -F "#{pane_pid}" 2>/dev/null | head -1)
+METADATA_FILE=$(create_metadata "$SESSION_NAME" "$PROJECT_DIR" "${TASK_FILE:-}" "$PANE_PID" "normal" "")
+
+if [[ -z "$METADATA_FILE" ]]; then
+    echo -e "${YELLOW}Warning: Failed to create metadata file${NC}"
+fi
+
+# Send initial task prompt if provided
+if [[ -n "$TASK_FILE" ]]; then
+    # Path to system instructions in Obsidian vault
+    SYSTEM_INSTRUCTIONS="$HOME/Obsidian/Shelfwood/3. Resources/2. Prompt book/Code editor/Copilot Agent System Instructions.md"
+
+    # Build combined prompt with system instructions + task
+    if [[ -f "$SYSTEM_INSTRUCTIONS" ]]; then
+        COMBINED_PROMPT="# System Instructions
+
+$(cat "$SYSTEM_INSTRUCTIONS")
+
+---
+
+# Task Assignment
+
+Read the task file at $TASK_FILE and help me implement the tasks defined in it. Let's work through them interactively - I want to be able to review your work, ask questions, and iterate as needed."
+    else
+        # Fallback if system instructions file not found
+        COMBINED_PROMPT="Read the task file at $TASK_FILE and help me implement the tasks defined in it. Let's work through them interactively - I want to be able to review your work, ask questions, and iterate as needed."
+    fi
+
+    tmux send-keys -t "$SESSION_NAME" "$COMBINED_PROMPT" C-m
+    sleep 2  # Give copilot time to receive the prompt
+    tmux send-keys -t "$SESSION_NAME" Enter  # Second Enter to trigger execution
+    echo -e "${GREEN}✓ Agent spawned with task${NC}"
+else
+    echo -e "${GREEN}✓ Agent spawned (waiting for input)${NC}"
+fi
+
+echo ""
+echo -e "${YELLOW}Control:${NC}"
+echo -e "  agent status $SESSION_NAME"
+echo -e "  agent send $SESSION_NAME \"message\""
+echo -e "  agent read $SESSION_NAME"
+echo -e "  agent kill $SESSION_NAME"
+echo ""

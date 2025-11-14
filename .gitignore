@@ -1,0 +1,23 @@
+# Node modules
+node_modules/
+*.log
+
+# Agent metadata (contains session data)
+agent/metadata/*.json
+!agent/metadata/.gitkeep
+
+# MCP server logs
+mcp-servers/*/logs/
+
+# Environment files
+.env
+.env.local
+
+# macOS
+.DS_Store
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo

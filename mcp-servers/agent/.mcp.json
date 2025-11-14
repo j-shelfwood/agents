@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "agent": {
+      "command": "node",
+      "args": [
+        "/Users/shelfwood/.shelfwood/mcp-servers/agent/index.js"
+      ],
+      "env": {
+        "HOME": "/Users/shelfwood"
+      }
+    }
+  }
+}

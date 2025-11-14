@@ -1,0 +1,230 @@
+#!/usr/bin/env bash
+# agent resume - Resume a crashed or stopped session
+
+set -e
+
+# Source metadata utilities
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/agent-metadata"
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+NC='\033[0m'
+
+usage() {
+    cat << EOF
+agent resume - Resume crashed or stopped session
+
+USAGE:
+  agent resume <session-name> [--new-session <name>]
+
+ARGUMENTS:
+  session-name       Name of the session to resume
+
+OPTIONS:
+  --new-session <name>  Custom name for resumed session (default: auto-generated)
+  -h, --help            Show this help
+
+EXAMPLES:
+  agent resume agent-myapp-1234567890
+  agent resume agent-myapp-1234567890 --new-session myapp-retry
+
+BEHAVIOR:
+  - Reads metadata from original session
+  - Cleans up stale tmux session if exists
+  - Spawns new session with same project and task
+  - Preserves context with resume note
+  - Links new session to original in metadata
+EOF
+    exit 0
+}
+
+# Parse arguments
+SESSION_NAME=""
+NEW_SESSION_NAME=""
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -h|--help)
+            usage
+            ;;
+        --new-session)
+            NEW_SESSION_NAME="$2"
+            shift 2
+            ;;
+        *)
+            if [[ -z "$SESSION_NAME" ]]; then
+                SESSION_NAME="$1"
+            else
+                echo -e "${RED}Error: Unknown argument: $1${NC}"
+                exit 1
+            fi
+            shift
+            ;;
+    esac
+done
+
+if [[ -z "$SESSION_NAME" ]]; then
+    echo -e "${RED}Error: session-name required${NC}"
+    echo "Usage: agent resume <session-name>"
+    exit 1
+fi
+
+# Validate session name format
+if ! validate_session_name "$SESSION_NAME"; then
+    exit 1
+fi
+
+# Validate new session name if provided
+if [[ -n "$NEW_SESSION_NAME" ]]; then
+    if ! validate_session_name "$NEW_SESSION_NAME"; then
+        exit 1
+    fi
+fi
+
+# Check if metadata exists
+if ! has_metadata "$SESSION_NAME"; then
+    echo -e "${RED}Error: No metadata found for session: $SESSION_NAME${NC}"
+    echo "Cannot resume session without metadata."
+    exit 1
+fi
+
+# Display header
+echo -e "${BLUE}╔════════════════════════════════════════════════════════════════╗${NC}"
+echo -e "${BLUE}║${NC}  ${GREEN}Resuming Agent Session${NC}                                     ${BLUE}║${NC}"
+echo -e "${BLUE}╚════════════════════════════════════════════════════════════════╝${NC}"
+echo ""
+
+# Read metadata
+PROJECT_DIR=$(get_metadata "$SESSION_NAME" "project_dir")
+TASK_FILE=$(get_metadata "$SESSION_NAME" "task_file")
+SPAWNED_AT=$(get_metadata "$SESSION_NAME" "spawned_at")
+IMPORTANCE=$(get_metadata "$SESSION_NAME" "importance")
+NOTES=$(get_metadata "$SESSION_NAME" "notes")
+
+# Detect current state
+STATE=$(detect_session_state "$SESSION_NAME")
+
+echo -e "${CYAN}Original Session:${NC} $SESSION_NAME"
+echo -e "${CYAN}State:${NC}            $STATE"
+echo -e "${CYAN}Project:${NC}          $PROJECT_DIR"
+if [[ -n "$TASK_FILE" && "$TASK_FILE" != "null" ]]; then
+    echo -e "${CYAN}Task:${NC}             $TASK_FILE"
+fi
+echo ""
+
+# Validate project directory still exists
+if [[ ! -d "$PROJECT_DIR" ]]; then
+    echo -e "${RED}Error: Project directory no longer exists: $PROJECT_DIR${NC}"
+    exit 1
+fi
+
+# Validate task file if specified
+if [[ -n "$TASK_FILE" && "$TASK_FILE" != "null" && ! -f "$TASK_FILE" ]]; then
+    echo -e "${YELLOW}Warning: Task file no longer exists: $TASK_FILE${NC}"
+    echo -e "${YELLOW}Will resume without task file${NC}"
+    TASK_FILE=""
+fi
+
+# Clean up stale session if exists
+if tmux has-session -t "$SESSION_NAME" 2>/dev/null; then
+    echo -e "${YELLOW}Cleaning up stale session...${NC}"
+    tmux kill-session -t "$SESSION_NAME" 2>/dev/null || true
+    sleep 1
+fi
+
+# Generate new session name if not provided
+if [[ -z "$NEW_SESSION_NAME" ]]; then
+    PROJECT_NAME=$(basename "$PROJECT_DIR")
+    TIMESTAMP=$(date +%s)
+    NEW_SESSION_NAME="agent-${PROJECT_NAME}-${TIMESTAMP}"
+fi
+
+# Normalize session name (tmux converts dots to underscores)
+NEW_SESSION_NAME=$(echo "$NEW_SESSION_NAME" | tr '.' '_')
+
+# Calculate age for context
+AGE_TEXT="unknown time"
+if [[ "$SPAWNED_AT" != "null" ]]; then
+    SPAWNED_SECONDS=$(date -j -f "%Y-%m-%dT%H:%M:%SZ" "$SPAWNED_AT" +%s 2>/dev/null || echo "0")
+    CURRENT_SECONDS=$(date +%s)
+    AGE_SECONDS=$((CURRENT_SECONDS - SPAWNED_SECONDS))
+
+    if [[ $AGE_SECONDS -ge 3600 ]]; then
+        AGE_HOURS=$((AGE_SECONDS / 3600))
+        AGE_MINUTES=$(((AGE_SECONDS % 3600) / 60))
+        AGE_TEXT="${AGE_HOURS}h ${AGE_MINUTES}m"
+    elif [[ $AGE_SECONDS -ge 60 ]]; then
+        AGE_MINUTES=$((AGE_SECONDS / 60))
+        AGE_TEXT="${AGE_MINUTES}m"
+    else
+        AGE_TEXT="${AGE_SECONDS}s"
+    fi
+fi
+
+echo -e "${CYAN}New Session:${NC}      $NEW_SESSION_NAME"
+echo ""
+echo -e "${YELLOW}Spawning resumed session...${NC}"
+
+# Spawn new session using agent spawn (use array to avoid eval)
+SPAWN_ARGS=("$SCRIPT_DIR/agent" "spawn")
+
+if [[ -n "$TASK_FILE" && "$TASK_FILE" != "null" ]]; then
+    SPAWN_ARGS+=("$PROJECT_DIR" "$TASK_FILE" "--session" "$NEW_SESSION_NAME")
+else
+    SPAWN_ARGS+=("$PROJECT_DIR" "--session" "$NEW_SESSION_NAME")
+fi
+
+"${SPAWN_ARGS[@]}" || {
+    echo -e "${RED}Error: Failed to spawn new session${NC}"
+    exit 1
+}
+
+# Update metadata with resume information
+if has_metadata "$NEW_SESSION_NAME"; then
+    # Set importance from original session
+    set_importance "$NEW_SESSION_NAME" "$IMPORTANCE"
+
+    # Add resume note
+    RESUME_NOTE="Resumed from $SESSION_NAME (originally spawned $AGE_TEXT ago)"
+    if [[ -n "$NOTES" && "$NOTES" != "null" ]]; then
+        RESUME_NOTE="$RESUME_NOTE. Original notes: $NOTES"
+    fi
+    add_note "$NEW_SESSION_NAME" "$RESUME_NOTE"
+
+    # Archive original session metadata
+    echo -e "${YELLOW}Archiving original session metadata...${NC}"
+    archive_metadata "$SESSION_NAME"
+
+    echo ""
+    echo -e "${GREEN}✓ Session resumed successfully${NC}"
+    echo ""
+
+    # Send context note to agent
+    sleep 3
+
+    CONTEXT_NOTE="[SYSTEM] Session resumption context:
+
+You are resuming work from a previous session that was active $AGE_TEXT ago.
+
+Original session: $SESSION_NAME
+Project: $PROJECT_DIR
+Task: ${TASK_FILE:-Interactive session (no task file)}
+
+Please review any recent changes in the project directory and continue from the last checkpoint. Check git status and recent file modifications to understand current state."
+
+    echo -e "${YELLOW}Sending context to agent...${NC}"
+    tmux send-keys -t "$NEW_SESSION_NAME" "$CONTEXT_NOTE" C-m
+    sleep 1
+    tmux send-keys -t "$NEW_SESSION_NAME" Enter
+
+    echo ""
+    echo -e "${CYAN}Monitor resumed session:${NC}"
+    echo -e "  agent read $NEW_SESSION_NAME"
+    echo -e "  agent status $NEW_SESSION_NAME"
+    echo -e "  agent info $NEW_SESSION_NAME"
+    echo ""
+fi

@@ -1,0 +1,19 @@
+{
+  "session_id": "agent-refactor-proposal",
+  "project_dir": "/Users/shelfwood/Projects/prj-more-apartments",
+  "task_file": "/Users/shelfwood/Projects/prj-more-apartments/.claude/tasks/propose-refactor-plan.md",
+  "spawned_at": "2025-11-14T18:09:22Z",
+  "spawned_by": "manual",
+  "status": "stopped",
+  "importance": "normal",
+  "tags": [],
+  "pid": 31101,
+  "last_activity": "2025-11-14T18:09:22Z",
+  "health_checks": {
+    "last_check": "2025-11-14T18:09:22Z",
+    "consecutive_failures": 0
+  },
+  "notes": "",
+  "resume_chain": [],
+  "stopped_at": "2025-11-14T18:14:58Z"
+}

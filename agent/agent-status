@@ -1,0 +1,110 @@
+#!/bin/bash
+# Check Agent Status
+# Detects agent state from tmux session output
+
+set -e
+
+# Source metadata utilities
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/agent-metadata"
+
+# Colors
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+MAGENTA='\033[0;35m'
+NC='\033[0m'
+
+SESSION_NAME="$1"
+
+if [[ -z "$SESSION_NAME" ]]; then
+    echo "Usage: agent status <session-name>"
+    exit 1
+fi
+
+# Validate session name format
+if ! validate_session_name "$SESSION_NAME"; then
+    exit 1
+fi
+
+if ! tmux has-session -t "$SESSION_NAME" 2>/dev/null; then
+    echo -e "${RED}Error: Session '$SESSION_NAME' not found${NC}"
+    exit 1
+fi
+
+# Capture recent output
+OUTPUT=$(tmux capture-pane -t "$SESSION_NAME" -p -S -100)
+
+# Detect state
+STATE="unknown"
+STATUS_COLOR="$NC"
+
+if echo "$OUTPUT" | grep -q "Ctrl+c Exit"; then
+    # Agent is waiting for user input
+    STATE="waiting_for_input"
+    STATUS_COLOR="$YELLOW"
+elif echo "$OUTPUT" | grep -q "⏺"; then
+    # Agent is executing tools
+    STATE="working"
+    STATUS_COLOR="$CYAN"
+elif echo "$OUTPUT" | grep -q "Allow\|Deny\|approve"; then
+    # Agent is waiting for permission
+    STATE="waiting_for_confirmation"
+    STATUS_COLOR="$MAGENTA"
+elif echo "$OUTPUT" | grep -q "✓\|Done\|completed"; then
+    # Agent completed task
+    STATE="completed"
+    STATUS_COLOR="$GREEN"
+elif echo "$OUTPUT" | grep -q "Error\|failed"; then
+    # Agent encountered error
+    STATE="error"
+    STATUS_COLOR="$RED"
+else
+    # Agent is idle or unknown state
+    STATE="idle"
+    STATUS_COLOR="$BLUE"
+fi
+
+# Display status
+echo -e "${BLUE}╔════════════════════════════════════════════════════════════════╗${NC}"
+echo -e "${BLUE}║${NC}  ${GREEN}Agent Status${NC}                                                ${BLUE}║${NC}"
+echo -e "${BLUE}╚════════════════════════════════════════════════════════════════╝${NC}"
+echo ""
+echo -e "${CYAN}Session:${NC}  $SESSION_NAME"
+echo -e "${CYAN}State:${NC}    ${STATUS_COLOR}${STATE}${NC}"
+echo ""
+
+# Show recent activity
+echo -e "${YELLOW}Recent Output (last 10 lines):${NC}"
+echo "$OUTPUT" | tail -10
+echo ""
+
+# Suggest next action
+case "$STATE" in
+    waiting_for_input)
+        echo -e "${YELLOW}→ Agent is ready for your input${NC}"
+        echo -e "  Use: ${CYAN}agent send $SESSION_NAME \"your message\"${NC}"
+        ;;
+    working)
+        echo -e "${CYAN}→ Agent is processing...${NC}"
+        echo -e "  Check again in a moment"
+        ;;
+    waiting_for_confirmation)
+        echo -e "${MAGENTA}→ Agent needs permission approval${NC}"
+        echo -e "  Attach to session: ${CYAN}agent attach $SESSION_NAME${NC}"
+        ;;
+    completed)
+        echo -e "${GREEN}→ Agent completed task${NC}"
+        echo -e "  Send follow-up or review work"
+        ;;
+    error)
+        echo -e "${RED}→ Agent encountered an error${NC}"
+        echo -e "  Review output: ${CYAN}agent read $SESSION_NAME${NC}"
+        ;;
+    *)
+        echo -e "${BLUE}→ Agent state unclear${NC}"
+        echo -e "  View full output: ${CYAN}agent read $SESSION_NAME${NC}"
+        ;;
+esac

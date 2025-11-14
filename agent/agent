@@ -1,0 +1,76 @@
+#!/bin/bash
+# Agent Management Command
+# Unified interface for managing copilot agent sessions
+#
+# DESIGN PHILOSOPHY:
+# - ALL commands are non-interactive by default
+# - NO confirmation prompts
+# - Built for automation and Claude Code usage
+# - Manages tmux sessions running copilot with full autonomy
+
+set -e
+
+AGENT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SUBCOMMAND="${1:-}"
+
+usage() {
+    cat << 'EOF'
+agent - Autonomous Copilot Agent Management
+
+USAGE:
+  agent <command> [arguments]
+
+COMMANDS:
+  spawn <project-dir> [task-file]     Spawn new agent session
+  watch [options]                     Watch agents until state change
+  kill <session-name>                 Terminate agent session
+  send <session-name> <message>       Send input to agent
+  read <session-name>                 Read agent output
+  status <session-name>               Check agent status
+  list                                List all active agents
+  attach <session-name>               Attach to agent interactively
+  approve <session-name> [y|n]        Send y/n response to agent
+  cleanup [options]                   Clean up stale sessions and metadata
+
+EXAMPLES:
+  agent spawn ~/projects/myapp tasks/refactor.md
+  agent watch                          # Block until state change
+  agent list
+  agent status agent-myapp-1234
+  agent send agent-myapp-1234 "Use Pest framework"
+  agent read agent-myapp-1234
+  agent kill agent-myapp-1234
+
+PHILOSOPHY:
+  All commands are non-interactive - no prompts, no confirmations.
+  Built for automation and managing multiple agents simultaneously.
+
+For detailed help on a command:
+  agent <command> --help
+EOF
+    exit 0
+}
+
+# Show usage if no command provided
+if [[ -z "$SUBCOMMAND" ]]; then
+    usage
+fi
+
+# Handle --help and -h
+if [[ "$SUBCOMMAND" == "--help" || "$SUBCOMMAND" == "-h" ]]; then
+    usage
+fi
+
+# Find subcommand script
+SUBCOMMAND_SCRIPT="$AGENT_DIR/agent-$SUBCOMMAND"
+
+if [[ ! -f "$SUBCOMMAND_SCRIPT" ]]; then
+    echo "Error: Unknown command '$SUBCOMMAND'"
+    echo ""
+    echo "Run 'agent --help' for usage"
+    exit 1
+fi
+
+# Execute subcommand with remaining arguments
+shift
+exec "$SUBCOMMAND_SCRIPT" "$@"

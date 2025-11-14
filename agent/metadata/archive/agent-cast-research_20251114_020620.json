@@ -1,0 +1,19 @@
+{
+  "session_id": "agent-cast-research",
+  "project_dir": "/Users/shelfwood/Projects/prj-more-apartments",
+  "task_file": "/Users/shelfwood/Projects/prj-more-apartments/.claude/tasks/research-laravel-cast-options.md",
+  "spawned_at": "2025-11-14T01:02:43Z",
+  "spawned_by": "manual",
+  "status": "stopped",
+  "importance": "normal",
+  "tags": [],
+  "pid": 36246,
+  "last_activity": "2025-11-14T01:02:43Z",
+  "health_checks": {
+    "last_check": "2025-11-14T01:02:43Z",
+    "consecutive_failures": 0
+  },
+  "notes": "",
+  "resume_chain": [],
+  "stopped_at": "2025-11-14T01:06:20Z"
+}

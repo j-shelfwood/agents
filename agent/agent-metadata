@@ -1,0 +1,258 @@
+#!/usr/bin/env bash
+# agent-metadata - Metadata management utilities for agent sessions
+# Sourced by agent commands to handle session metadata
+
+METADATA_DIR="$HOME/.shelfwood/agent/metadata"
+METADATA_ARCHIVE_DIR="$HOME/.shelfwood/agent/metadata/archive"
+
+# Ensure metadata directories exist
+mkdir -p "$METADATA_DIR"
+mkdir -p "$METADATA_ARCHIVE_DIR"
+
+# Validate session name format
+# Usage: validate_session_name SESSION_NAME
+# Returns: 0 if valid, 1 if invalid (with error message to stderr)
+validate_session_name() {
+    local session="$1"
+
+    if [[ -z "$session" ]]; then
+        echo "Error: Session name is required" >&2
+        return 1
+    fi
+
+    # Only allow alphanumeric, dash, underscore
+    if [[ ! "$session" =~ ^[a-zA-Z0-9_-]+$ ]]; then
+        echo "Error: Invalid session name '$session'" >&2
+        echo "Session names must contain only letters, numbers, dashes, and underscores" >&2
+        return 1
+    fi
+
+    # Length check
+    if [[ ${#session} -gt 100 ]]; then
+        echo "Error: Session name too long (max 100 characters)" >&2
+        return 1
+    fi
+
+    return 0
+}
+
+# Create metadata file for a session
+# Usage: create_metadata SESSION_NAME PROJECT_DIR TASK_FILE PID [IMPORTANCE] [NOTES]
+create_metadata() {
+    local session="$1"
+    local project_dir="$2"
+    local task_file="$3"
+    local pid="$4"
+    local importance="${5:-normal}"
+    local notes="${6:-}"
+    local spawned_by="${CLAUDE_CODE_SESSION_ID:-manual}"
+
+    local metadata_file="$METADATA_DIR/${session}.json"
+    local timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+    cat > "$metadata_file" <<EOF
+{
+  "session_id": "$session",
+  "project_dir": "$project_dir",
+  "task_file": "$task_file",
+  "spawned_at": "$timestamp",
+  "spawned_by": "$spawned_by",
+  "status": "running",
+  "importance": "$importance",
+  "tags": [],
+  "pid": $pid,
+  "last_activity": "$timestamp",
+  "health_checks": {
+    "last_check": "$timestamp",
+    "consecutive_failures": 0
+  },
+  "notes": "$notes",
+  "resume_chain": []
+}
+EOF
+    echo "$metadata_file"
+}
+
+# Update metadata field
+# Usage: update_metadata SESSION_NAME FIELD VALUE
+update_metadata() {
+    local session="$1"
+    local field="$2"
+    local value="$3"
+    local metadata_file="$METADATA_DIR/${session}.json"
+
+    if [[ ! -f "$metadata_file" ]]; then
+        return 1
+    fi
+
+    # Use jq if available, otherwise use sed for simple updates
+    if command -v jq &>/dev/null; then
+        local tmp=$(mktemp)
+        jq --arg val "$value" ".${field} = \$val" "$metadata_file" > "$tmp" && mv "$tmp" "$metadata_file"
+    else
+        # Fallback for simple string replacements
+        sed -i.bak "s|\"${field}\": \"[^\"]*\"|\"${field}\": \"${value}\"|" "$metadata_file"
+        rm -f "${metadata_file}.bak"
+    fi
+}
+
+# Get metadata field value
+# Usage: get_metadata SESSION_NAME FIELD
+get_metadata() {
+    local session="$1"
+    local field="$2"
+    local metadata_file="$METADATA_DIR/${session}.json"
+
+    if [[ ! -f "$metadata_file" ]]; then
+        return 1
+    fi
+
+    if command -v jq &>/dev/null; then
+        jq -r ".${field}" "$metadata_file" 2>/dev/null
+    else
+        # Fallback: grep and sed
+        grep "\"${field}\"" "$metadata_file" | sed -E 's/.*"'"$field"'": "?([^",}]*)"?.*/\1/' | tr -d ' '
+    fi
+}
+
+# Check if metadata exists
+# Usage: has_metadata SESSION_NAME
+has_metadata() {
+    local session="$1"
+    [[ -f "$METADATA_DIR/${session}.json" ]]
+}
+
+# Detect session health state
+# Usage: detect_session_state SESSION_NAME
+# Returns: running|crashed|zombie|missing
+detect_session_state() {
+    local session="$1"
+
+    # Check if tmux session exists
+    if ! tmux has-session -t "$session" 2>/dev/null; then
+        if has_metadata "$session"; then
+            echo "missing"
+        else
+            echo "unknown"
+        fi
+        return
+    fi
+
+    # Check if pane is valid
+    if ! tmux list-panes -t "$session" >/dev/null 2>&1; then
+        echo "zombie"
+        return
+    fi
+
+    # Get pane PID
+    local pid=$(tmux list-panes -t "$session" -F "#{pane_pid}" 2>/dev/null | head -1)
+
+    if [[ -z "$pid" ]]; then
+        echo "zombie"
+        return
+    fi
+
+    # Check if copilot process is running
+    local cmd=$(ps -p "$pid" -o command= 2>/dev/null)
+
+    if [[ "$cmd" == *"bin/copilot"* && "$cmd" == *"--add-dir"* ]]; then
+        echo "running"
+    elif [[ -n "$cmd" ]]; then
+        echo "crashed"
+    else
+        echo "zombie"
+    fi
+}
+
+# Update last activity timestamp
+# Usage: touch_metadata SESSION_NAME
+touch_metadata() {
+    local session="$1"
+    local timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+    update_metadata "$session" "last_activity" "$timestamp"
+}
+
+# Archive metadata (move to archive directory)
+# Usage: archive_metadata SESSION_NAME
+archive_metadata() {
+    local session="$1"
+    local metadata_file="$METADATA_DIR/${session}.json"
+
+    if [[ -f "$metadata_file" ]]; then
+        local timestamp=$(date +"%Y%m%d_%H%M%S")
+        mv "$metadata_file" "$METADATA_ARCHIVE_DIR/${session}_${timestamp}.json"
+    fi
+}
+
+# Add note to metadata
+# Usage: add_note SESSION_NAME "note text"
+add_note() {
+    local session="$1"
+    local note="$2"
+    update_metadata "$session" "notes" "$note"
+}
+
+# Add tag to metadata
+# Usage: add_tag SESSION_NAME TAG
+add_tag() {
+    local session="$1"
+    local tag="$2"
+    local metadata_file="$METADATA_DIR/${session}.json"
+
+    if [[ ! -f "$metadata_file" ]]; then
+        return 1
+    fi
+
+    if command -v jq &>/dev/null; then
+        local tmp=$(mktemp)
+        jq --arg tag "$tag" '.tags += [$tag] | .tags |= unique' "$metadata_file" > "$tmp" && mv "$tmp" "$metadata_file"
+    fi
+}
+
+# Set importance level
+# Usage: set_importance SESSION_NAME LEVEL
+set_importance() {
+    local session="$1"
+    local level="$2"
+    update_metadata "$session" "importance" "$level"
+}
+
+# List all metadata files
+# Usage: list_metadata
+list_metadata() {
+    find "$METADATA_DIR" -maxdepth 1 -name "*.json" -type f 2>/dev/null | while read -r file; do
+        basename "$file" .json
+    done
+}
+
+# Clean up stale metadata (sessions that no longer exist)
+# Usage: cleanup_stale_metadata [--force]
+cleanup_stale_metadata() {
+    local force=false
+    if [[ "$1" == "--force" ]]; then
+        force=true
+    fi
+
+    local stale_count=0
+    local protected_count=0
+
+    list_metadata | while read -r session; do
+        local state=$(detect_session_state "$session")
+        local importance=$(get_metadata "$session" "importance")
+
+        if [[ "$state" == "missing" || "$state" == "zombie" ]]; then
+            if [[ "$importance" == "critical" && "$force" != "true" ]]; then
+                ((protected_count++))
+                continue
+            fi
+
+            archive_metadata "$session"
+            ((stale_count++))
+        fi
+    done
+
+    echo "Cleaned up $stale_count stale sessions"
+    if [[ $protected_count -gt 0 ]]; then
+        echo "Skipped $protected_count protected critical sessions (use --force)"
+    fi
+}

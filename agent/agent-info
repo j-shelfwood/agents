@@ -1,0 +1,225 @@
+#!/usr/bin/env bash
+# agent info - Display detailed session information
+
+set -e
+
+# Source metadata utilities
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/agent-metadata"
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+MAGENTA='\033[0;35m'
+NC='\033[0m'
+
+usage() {
+    cat << EOF
+agent info - Display session information
+
+USAGE:
+  agent info <session-name>
+
+ARGUMENTS:
+  session-name   Name of the agent session
+
+EXAMPLES:
+  agent info agent-myapp-1234567890
+
+OUTPUT:
+  Displays complete session metadata including:
+  - Session identification
+  - Project and task information
+  - Current health status
+  - Timestamps and activity
+  - Notes and tags
+  - Process information
+EOF
+    exit 0
+}
+
+if [[ "$1" == "-h" || "$1" == "--help" ]]; then
+    usage
+fi
+
+if [[ -z "$1" ]]; then
+    echo -e "${RED}Error: session-name required${NC}"
+    echo "Usage: agent info <session-name>"
+    exit 1
+fi
+
+SESSION_NAME="$1"
+
+# Validate session name format
+if ! validate_session_name "$SESSION_NAME"; then
+    exit 1
+fi
+
+# Check if metadata exists
+if ! has_metadata "$SESSION_NAME"; then
+    echo -e "${RED}Error: No metadata found for session: $SESSION_NAME${NC}"
+    echo "Session may have been created before metadata system was implemented."
+    exit 1
+fi
+
+# Read metadata
+PROJECT_DIR=$(get_metadata "$SESSION_NAME" "project_dir")
+TASK_FILE=$(get_metadata "$SESSION_NAME" "task_file")
+SPAWNED_AT=$(get_metadata "$SESSION_NAME" "spawned_at")
+IMPORTANCE=$(get_metadata "$SESSION_NAME" "importance")
+NOTES=$(get_metadata "$SESSION_NAME" "notes")
+LAST_ACTIVITY=$(get_metadata "$SESSION_NAME" "last_activity")
+PID=$(get_metadata "$SESSION_NAME" "pid")
+
+# Detect current state
+STATE=$(detect_session_state "$SESSION_NAME")
+
+# Color-code status
+case "$STATE" in
+    running)
+        STATE_COLOR="$GREEN"
+        STATE_SYMBOL="●"
+        STATE_TEXT="RUNNING"
+        ;;
+    crashed)
+        STATE_COLOR="$RED"
+        STATE_SYMBOL="✖"
+        STATE_TEXT="CRASHED"
+        ;;
+    zombie)
+        STATE_COLOR="$YELLOW"
+        STATE_SYMBOL="⚠"
+        STATE_TEXT="ZOMBIE"
+        ;;
+    missing)
+        STATE_COLOR="$MAGENTA"
+        STATE_SYMBOL="○"
+        STATE_TEXT="MISSING"
+        ;;
+    *)
+        STATE_COLOR="$NC"
+        STATE_SYMBOL="?"
+        STATE_TEXT="UNKNOWN"
+        ;;
+esac
+
+# Format importance
+case "$IMPORTANCE" in
+    critical)
+        IMPORTANCE_COLOR="$RED"
+        IMPORTANCE_SYMBOL="🔴"
+        ;;
+    high)
+        IMPORTANCE_COLOR="$YELLOW"
+        IMPORTANCE_SYMBOL="🟡"
+        ;;
+    *)
+        IMPORTANCE_COLOR="$CYAN"
+        IMPORTANCE_SYMBOL="🔵"
+        ;;
+esac
+
+# Display header
+echo -e "${BLUE}╔════════════════════════════════════════════════════════════════╗${NC}"
+echo -e "${BLUE}║${NC}  ${GREEN}Agent Session Information${NC}                                   ${BLUE}║${NC}"
+echo -e "${BLUE}╚════════════════════════════════════════════════════════════════╝${NC}"
+echo ""
+
+# Session identification
+echo -e "${CYAN}Session:${NC}       $SESSION_NAME"
+echo -e "${CYAN}Status:${NC}        ${STATE_COLOR}${STATE_SYMBOL} ${STATE_TEXT}${NC}"
+echo -e "${CYAN}Importance:${NC}    ${IMPORTANCE_COLOR}${IMPORTANCE_SYMBOL} ${IMPORTANCE}${NC}"
+echo ""
+
+# Project and task info
+echo -e "${YELLOW}═══ Project Information ═══${NC}"
+echo -e "${CYAN}Project Dir:${NC}   $PROJECT_DIR"
+if [[ -n "$TASK_FILE" && "$TASK_FILE" != "null" ]]; then
+    echo -e "${CYAN}Task File:${NC}     $TASK_FILE"
+    if [[ -f "$TASK_FILE" ]]; then
+        echo -e "${CYAN}Task Exists:${NC}   ${GREEN}✓ Yes${NC}"
+    else
+        echo -e "${CYAN}Task Exists:${NC}   ${RED}✗ No (file removed)${NC}"
+    fi
+else
+    echo -e "${CYAN}Task File:${NC}     ${YELLOW}(none - interactive session)${NC}"
+fi
+echo ""
+
+# Timestamps
+echo -e "${YELLOW}═══ Timeline ═══${NC}"
+echo -e "${CYAN}Spawned:${NC}       $SPAWNED_AT"
+echo -e "${CYAN}Last Activity:${NC} $LAST_ACTIVITY"
+
+# Calculate age
+if [[ "$SPAWNED_AT" != "null" ]]; then
+    SPAWNED_SECONDS=$(date -j -f "%Y-%m-%dT%H:%M:%SZ" "$SPAWNED_AT" +%s 2>/dev/null || echo "0")
+    CURRENT_SECONDS=$(date +%s)
+    AGE_SECONDS=$((CURRENT_SECONDS - SPAWNED_SECONDS))
+
+    if [[ $AGE_SECONDS -ge 3600 ]]; then
+        AGE_HOURS=$((AGE_SECONDS / 3600))
+        AGE_MINUTES=$(((AGE_SECONDS % 3600) / 60))
+        echo -e "${CYAN}Age:${NC}           ${AGE_HOURS}h ${AGE_MINUTES}m"
+    elif [[ $AGE_SECONDS -ge 60 ]]; then
+        AGE_MINUTES=$((AGE_SECONDS / 60))
+        echo -e "${CYAN}Age:${NC}           ${AGE_MINUTES}m"
+    else
+        echo -e "${CYAN}Age:${NC}           ${AGE_SECONDS}s"
+    fi
+fi
+echo ""
+
+# Process information
+echo -e "${YELLOW}═══ Process Information ═══${NC}"
+echo -e "${CYAN}PID:${NC}           $PID"
+
+if [[ "$STATE" == "running" ]]; then
+    # Get current process info
+    CURRENT_PID=$(tmux list-panes -t "$SESSION_NAME" -F "#{pane_pid}" 2>/dev/null | head -1)
+    if [[ "$CURRENT_PID" != "$PID" ]]; then
+        echo -e "${CYAN}Current PID:${NC}   $CURRENT_PID ${YELLOW}(process restarted)${NC}"
+    fi
+
+    CMD=$(ps -p "$CURRENT_PID" -o command= 2>/dev/null | head -c 80)
+    if [[ -n "$CMD" ]]; then
+        echo -e "${CYAN}Command:${NC}       ${CMD}..."
+    fi
+elif [[ "$STATE" == "crashed" || "$STATE" == "zombie" ]]; then
+    echo -e "${RED}Process not running${NC}"
+fi
+echo ""
+
+# Notes and tags (if any)
+if [[ -n "$NOTES" && "$NOTES" != "null" ]]; then
+    echo -e "${YELLOW}═══ Notes ═══${NC}"
+    echo -e "$NOTES"
+    echo ""
+fi
+
+# Health assessment and recommendations
+echo -e "${YELLOW}═══ Recommendations ═══${NC}"
+case "$STATE" in
+    running)
+        echo -e "${GREEN}✓ Session healthy${NC}"
+        echo -e "  agent read $SESSION_NAME     - View recent output"
+        echo -e "  agent send $SESSION_NAME ... - Send message"
+        ;;
+    crashed)
+        echo -e "${RED}⚠ Session crashed - copilot exited${NC}"
+        echo -e "  agent resume $SESSION_NAME   - Restart with same task"
+        echo -e "  agent kill $SESSION_NAME     - Clean up session"
+        ;;
+    zombie)
+        echo -e "${YELLOW}⚠ Session is zombie - tmux pane invalid${NC}"
+        echo -e "  agent kill $SESSION_NAME     - Clean up required"
+        ;;
+    missing)
+        echo -e "${MAGENTA}⚠ Session missing - tmux session gone${NC}"
+        echo -e "  agent resume $SESSION_NAME   - Recreate session"
+        echo -e "  agent cleanup                - Archive metadata"
+        ;;
+esac
+echo ""

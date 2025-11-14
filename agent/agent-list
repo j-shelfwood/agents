@@ -1,0 +1,192 @@
+#!/bin/bash
+# List Active Agent Sessions
+# Shows all agent sessions with metadata-enhanced status
+
+set -e
+
+# Source metadata utilities
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/agent-metadata"
+
+BLUE='\033[0;34m'
+GREEN='\033[0;32m'
+RED='\033[0;31m'
+YELLOW='\033[1;33m'
+CYAN='\033[0;36m'
+MAGENTA='\033[0;35m'
+NC='\033[0m'
+
+echo -e "${BLUE}╔════════════════════════════════════════════════════════════════╗${NC}"
+echo -e "${BLUE}║${NC}  ${GREEN}Active Agent Sessions${NC}                              ${BLUE}║${NC}"
+echo -e "${BLUE}╚════════════════════════════════════════════════════════════════╝${NC}"
+echo ""
+
+# Get all tmux sessions
+TMUX_SESSIONS=$(tmux list-sessions -F "#{session_name}" 2>/dev/null || true)
+
+# Get all metadata sessions
+METADATA_SESSIONS=$(list_metadata)
+
+# Combine and deduplicate
+ALL_SESSIONS=$(echo -e "${TMUX_SESSIONS}\n${METADATA_SESSIONS}" | sort -u | grep -v '^$')
+
+if [[ -z "$ALL_SESSIONS" ]]; then
+    echo -e "${YELLOW}No agent sessions found${NC}"
+    echo ""
+    echo "Start a new session with:"
+    echo -e "  ${CYAN}agent spawn <project-dir> [task-file]${NC}"
+    exit 0
+fi
+
+# Filter for copilot/agent sessions
+AGENT_SESSIONS=""
+while IFS= read -r session; do
+    # Check if it's an agent session (has metadata or running copilot)
+    if has_metadata "$session"; then
+        AGENT_SESSIONS="${AGENT_SESSIONS}${session}"$'\n'
+    elif tmux has-session -t "$session" 2>/dev/null; then
+        # Check if running copilot via process detection
+        PID=$(tmux list-panes -t "$session" -F "#{pane_pid}" 2>/dev/null | head -1)
+        if [[ -n "$PID" ]]; then
+            CMD=$(ps -p "$PID" -o command= 2>/dev/null)
+            if [[ "$CMD" == *"bin/copilot"* && "$CMD" == *"--add-dir"* ]]; then
+                AGENT_SESSIONS="${AGENT_SESSIONS}${session}"$'\n'
+            fi
+        fi
+    fi
+done <<< "$ALL_SESSIONS"
+
+# Remove empty lines
+AGENT_SESSIONS=$(echo "$AGENT_SESSIONS" | grep -v '^$' || true)
+
+if [[ -z "$AGENT_SESSIONS" ]]; then
+    echo -e "${YELLOW}No active agent sessions${NC}"
+    echo ""
+    echo "Start a new session with:"
+    echo -e "  ${CYAN}agent spawn <project-dir> [task-file]${NC}"
+    exit 0
+fi
+
+# Display header
+printf "${CYAN}%-35s %-12s %-10s %s${NC}\n" "Session Name" "Status" "Age" "Project"
+echo "────────────────────────────────────────────────────────────────────────────────"
+
+# Display each session
+while IFS= read -r session; do
+    [[ -z "$session" ]] && continue
+
+    # Detect state
+    STATE=$(detect_session_state "$session")
+
+    # Get metadata if exists
+    if has_metadata "$session"; then
+        PROJECT_DIR=$(get_metadata "$session" "project_dir")
+        SPAWNED_AT=$(get_metadata "$session" "spawned_at")
+        IMPORTANCE=$(get_metadata "$session" "importance")
+
+        # Calculate age
+        AGE_TEXT="?"
+        if [[ "$SPAWNED_AT" != "null" && -n "$SPAWNED_AT" ]]; then
+            SPAWNED_SECONDS=$(date -j -f "%Y-%m-%dT%H:%M:%SZ" "$SPAWNED_AT" +%s 2>/dev/null || echo "0")
+            if [[ "$SPAWNED_SECONDS" != "0" ]]; then
+                CURRENT_SECONDS=$(date +%s)
+                AGE_SECONDS=$((CURRENT_SECONDS - SPAWNED_SECONDS))
+
+                if [[ $AGE_SECONDS -ge 3600 ]]; then
+                    AGE_HOURS=$((AGE_SECONDS / 3600))
+                    AGE_TEXT="${AGE_HOURS}h"
+                elif [[ $AGE_SECONDS -ge 60 ]]; then
+                    AGE_MINUTES=$((AGE_SECONDS / 60))
+                    AGE_TEXT="${AGE_MINUTES}m"
+                else
+                    AGE_TEXT="${AGE_SECONDS}s"
+                fi
+            fi
+        fi
+
+        # Truncate project path
+        PROJECT_NAME=$(basename "$PROJECT_DIR" 2>/dev/null || echo "$PROJECT_DIR")
+    else
+        # No metadata - try to extract from process
+        if tmux has-session -t "$session" 2>/dev/null; then
+            PID=$(tmux list-panes -t "$session" -F "#{pane_pid}" 2>/dev/null | head -1)
+            if [[ -n "$PID" ]]; then
+                CMD=$(ps -p "$PID" -o command= 2>/dev/null)
+                PROJECT_DIR=$(echo "$CMD" | grep -o -- '--add-dir "[^"]*"' | sed 's/--add-dir "\(.*\)"/\1/')
+                PROJECT_NAME=$(basename "$PROJECT_DIR" 2>/dev/null || echo "unknown")
+            else
+                PROJECT_NAME="unknown"
+            fi
+        else
+            PROJECT_NAME="unknown"
+        fi
+        AGE_TEXT="?"
+        IMPORTANCE="normal"
+    fi
+
+    # Color-code status
+    case "$STATE" in
+        running)
+            STATUS_COLOR="$GREEN"
+            STATUS_SYMBOL="●"
+            STATUS_TEXT="running"
+            ;;
+        crashed)
+            STATUS_COLOR="$RED"
+            STATUS_SYMBOL="✖"
+            STATUS_TEXT="crashed"
+            ;;
+        zombie)
+            STATUS_COLOR="$YELLOW"
+            STATUS_SYMBOL="⚠"
+            STATUS_TEXT="zombie"
+            ;;
+        missing)
+            STATUS_COLOR="$MAGENTA"
+            STATUS_SYMBOL="○"
+            STATUS_TEXT="missing"
+            ;;
+        *)
+            STATUS_COLOR="$NC"
+            STATUS_SYMBOL="?"
+            STATUS_TEXT="unknown"
+            ;;
+    esac
+
+    # Importance indicator
+    case "$IMPORTANCE" in
+        critical)
+            IMP_INDICATOR="🔴"
+            ;;
+        high)
+            IMP_INDICATOR="🟡"
+            ;;
+        *)
+            IMP_INDICATOR=""
+            ;;
+    esac
+
+    # Truncate session name if too long
+    SESSION_DISPLAY="$session"
+    if [[ ${#SESSION_DISPLAY} -gt 33 ]]; then
+        SESSION_DISPLAY="${SESSION_DISPLAY:0:30}..."
+    fi
+
+    printf "%-35s ${STATUS_COLOR}%-12s${NC} %-10s %s%s\n" \
+        "$SESSION_DISPLAY" \
+        "${STATUS_SYMBOL} ${STATUS_TEXT}" \
+        "$AGE_TEXT" \
+        "$PROJECT_NAME" \
+        "$IMP_INDICATOR"
+
+done <<< "$AGENT_SESSIONS"
+
+echo ""
+echo -e "${YELLOW}Commands:${NC}"
+echo -e "  ${CYAN}agent info <session>${NC}     Detailed session info"
+echo -e "  ${CYAN}agent status <session>${NC}   Check agent state"
+echo -e "  ${CYAN}agent read <session>${NC}     View output"
+echo -e "  ${CYAN}agent send <session> \"msg\"${NC}  Send input"
+echo -e "  ${CYAN}agent resume <session>${NC}   Resume crashed session"
+echo -e "  ${CYAN}agent kill <session>${NC}     Terminate session"
+echo ""

@@ -1,0 +1,19 @@
+{
+  "session_id": "agent-prj-more-apartments-1762948686",
+  "project_dir": "/Users/shelfwood/Projects/prj-more-apartments",
+  "task_file": "/Users/shelfwood/Projects/prj-more-apartments/.claude/tasks/fix-tests-and-add-coverage.md",
+  "spawned_at": "2025-11-12T11:58:08Z",
+  "spawned_by": "manual",
+  "status": "stopped",
+  "importance": "normal",
+  "tags": [],
+  "pid": 2530,
+  "last_activity": "2025-11-12T11:58:08Z",
+  "health_checks": {
+    "last_check": "2025-11-12T11:58:08Z",
+    "consecutive_failures": 0
+  },
+  "notes": "",
+  "resume_chain": [],
+  "stopped_at": "2025-11-12T12:42:49Z"
+}
