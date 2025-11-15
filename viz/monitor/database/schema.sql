@@ -1,12 +1,12 @@
 -- Sessions tracking
 CREATE TABLE sessions (
-  id TEXT PRIMARY KEY,              -- Agent session name (e.g., "agent-myapp-1234")
-  copilot_session_id TEXT UNIQUE,   -- Linked copilot UUID
+  id TEXT PRIMARY KEY,              -- Session UUID from JSONL filename
+  copilot_session_id TEXT,          -- Legacy field (no longer used in JSONL-first architecture)
   project_dir TEXT NOT NULL,
   task_file TEXT,
   spawned_at DATETIME NOT NULL,
   spawned_by TEXT,                  -- Claude Code session ID or "manual"
-  status TEXT DEFAULT 'running',    -- 'running', 'stopped', 'crashed'
+  status TEXT DEFAULT 'running',    -- 'running', 'stopped', 'crashed', 'completed'
   importance TEXT DEFAULT 'normal', -- 'normal', 'high', 'critical'
   pid INTEGER,
   last_activity DATETIME,

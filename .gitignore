@@ -21,3 +21,10 @@ mcp-servers/*/logs/
 .idea/
 *.swp
 *.swo
+
+# Visualization system
+viz/data/
+viz/logs/
+*.db
+*.db-shm
+*.db-wal
