@@ -4,11 +4,10 @@ Autonomous agent orchestration system for GitHub Copilot CLI.
 
 ## Overview
 
-This repository contains the infrastructure for managing and monitoring autonomous coding agents powered by GitHub Copilot CLI. It consists of three main components:
+This repository contains the infrastructure for managing and monitoring autonomous coding agents powered by GitHub Copilot CLI. It consists of two main components:
 
 1. **Agent Management System** (`agent/`) - Bash scripts for spawning, monitoring, and controlling agent sessions
 2. **MCP Server** (`mcp-servers/agent/`) - Model Context Protocol server for Claude Code integration
-3. **Visualization System** (`viz/`) - Real-time monitoring and visualization dashboard (planned)
 
 ## Architecture
 
@@ -31,15 +30,10 @@ shelfwood-agents/
 │   ├── agent-metadata          # Metadata management utilities
 │   └── metadata/               # Agent session metadata
 │
-├── mcp-servers/
-│   └── agent/                  # MCP server for agent orchestration
-│       ├── index.js            # Main MCP server
-│       └── package.json        # Dependencies
-│
-└── viz/                        # Visualization system (planned)
-    ├── monitor/                # Event monitoring daemon
-    ├── server/                 # Web server + API
-    └── web/                    # React + D3.js dashboard
+└── mcp-servers/
+    └── agent/                  # MCP server for agent orchestration
+        ├── index.js            # Main MCP server
+        └── package.json        # Dependencies
 ```
 
 ## Installation
@@ -183,49 +177,6 @@ Each agent session has metadata stored in `agent/metadata/<session-name>.json`:
   "pid": 12345,
   "last_activity": "2025-11-14T18:10:00Z"
 }
-```
-
-### Data Sources for Visualization
-
-Agents generate activity data in multiple formats:
-
-- **tmux output** - Real-time terminal capture (unstructured)
-- **Copilot session logs** - `~/.copilot/logs/session-*.log` (operational logs)
-- **Copilot session state** - `~/.copilot/session-state/*.jsonl` (structured events)
-- **Agent metadata** - Session tracking and correlation
-
-## Visualization System (Planned)
-
-The visualization system will provide real-time monitoring of agent activity:
-
-- **File tree visualization** - See which files agents are reading/writing
-- **Command timeline** - Track tool executions and commands
-- **Activity heatmap** - Identify hotspots of modification
-- **Session replay** - Review historical agent sessions
-
-### Tech Stack
-
-- **Monitor Daemon**: Node.js (event parser + correlator)
-- **Storage**: SQLite (event store for replay)
-- **Transport**: Server-Sent Events (real-time updates)
-- **Backend**: Express (REST API + SSE)
-- **Frontend**: Vite + React + D3.js
-
-## Data Discovery
-
-Copilot CLI stores structured session data that can be programmatically accessed:
-
-```bash
-# Session state (JSONL format, structured events)
-~/.copilot/session-state/<uuid>.jsonl
-
-# Extract tool executions
-jq 'select(.type == "tool.execution_start")' \
-  ~/.copilot/session-state/<uuid>.jsonl
-
-# Extract file operations
-jq 'select(.data.toolName == "view" or .data.toolName == "edit_file")' \
-  ~/.copilot/session-state/<uuid>.jsonl
 ```
 
 ## Contributing

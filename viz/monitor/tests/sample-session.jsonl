@@ -1,7 +1,0 @@
-{"type":"session.start","data":{"sessionId":"test-session-123","version":1,"producer":"copilot-agent","copilotVersion":"0.0.354","startTime":"2025-11-14T18:08:23.213Z"},"id":"session-uuid-1","timestamp":"2025-11-14T18:08:23.217Z","parentId":null}
-{"type":"tool.execution_start","data":{"toolCallId":"toolu_001","toolName":"view","arguments":{"path":"/Users/shelfwood/Projects/myapp/src/index.ts"}},"id":"tool-start-001","timestamp":"2025-11-14T18:08:34.380Z","parentId":"parent-uuid-1"}
-{"type":"tool.execution_complete","data":{"toolCallId":"toolu_001","success":true,"result":{"content":"file contents"}},"id":"tool-complete-001","timestamp":"2025-11-14T18:08:34.401Z","parentId":"tool-start-001"}
-{"type":"tool.execution_start","data":{"toolCallId":"toolu_002","toolName":"bash","arguments":{"command":"git status"}},"id":"tool-start-002","timestamp":"2025-11-14T18:09:00.000Z","parentId":"parent-uuid-2"}
-{"type":"tool.execution_complete","data":{"toolCallId":"toolu_002","success":true},"id":"tool-complete-002","timestamp":"2025-11-14T18:09:00.150Z","parentId":"tool-start-002"}
-{"type":"tool.execution_start","data":{"toolCallId":"toolu_003","toolName":"edit_file","arguments":{"path":"/Users/shelfwood/Projects/myapp/src/utils.js","old_str":"const x = 1;","new_str":"const x = 2;"}},"id":"tool-start-003","timestamp":"2025-11-14T18:10:00.000Z","parentId":"parent-uuid-3"}
-{"type":"tool.execution_complete","data":{"toolCallId":"toolu_003","success":false},"id":"tool-complete-003","timestamp":"2025-11-14T18:10:00.250Z","parentId":"tool-start-003"}

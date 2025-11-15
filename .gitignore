@@ -4,6 +4,7 @@ node_modules/
 
 # Agent metadata (contains session data)
 agent/metadata/*.json
+agent/metadata/archive/
 !agent/metadata/.gitkeep
 
 # MCP server logs
