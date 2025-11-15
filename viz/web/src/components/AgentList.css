@@ -1,0 +1,53 @@
+.agent-list {
+  padding: 1.5rem;
+}
+
+.agent-list h3 {
+  font-size: 0.875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: #6b7280;
+  margin-bottom: 1rem;
+  letter-spacing: 0.05em;
+}
+
+.agent-items {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.agent-item {
+  padding: 1rem;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border: 2px solid transparent;
+}
+
+.agent-item:hover {
+  background: #f9fafb;
+}
+
+.agent-item.active {
+  background: #ede9fe;
+  border-color: #8b5cf6;
+}
+
+.agent-name {
+  font-weight: 600;
+  color: #1f2937;
+  margin-bottom: 0.25rem;
+  font-size: 0.875rem;
+}
+
+.agent-project {
+  font-size: 0.75rem;
+  color: #6b7280;
+  margin-bottom: 0.25rem;
+}
+
+.agent-time {
+  font-size: 0.7rem;
+  color: #9ca3af;
+}

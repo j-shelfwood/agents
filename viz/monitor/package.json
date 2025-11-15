@@ -1,0 +1,22 @@
+{
+  "name": "@shelfwood/agent-viz-monitor",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "dev": "node --watch index.js",
+    "start": "node index.js",
+    "test": "vitest",
+    "test:watch": "vitest --watch",
+    "test:integration": "node tests/integration.test.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.0.0",
+    "chokidar": "^4.0.3"
+  },
+  "devDependencies": {
+    "jest": "^30.2.0",
+    "mocha": "^11.7.5",
+    "vitest": "^2.1.9"
+  }
+}
