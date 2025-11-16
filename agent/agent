@@ -31,6 +31,8 @@ COMMANDS:
   attach <session-name>               Attach to agent interactively
   approve <session-name> [y|n]        Send y/n response to agent
   cleanup [options]                   Clean up stale sessions and metadata
+  metadata <subcommand>               Metadata management utilities
+  doctor [--test]                     System health check and diagnostics
 
 EXAMPLES:
   agent spawn ~/projects/myapp tasks/refactor.md

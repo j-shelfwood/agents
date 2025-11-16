@@ -1,0 +1,341 @@
+#!/bin/bash
+# agent-doctor - System health check and diagnostics
+# Validates environment and dependencies for agent orchestration
+
+# Note: Not using set -e because we want to continue checking even if individual tests fail
+
+AGENT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+METADATA_DIR="$HOME/.shelfwood/agent/metadata"
+METADATA_ARCHIVE_DIR="$HOME/.shelfwood/agent/metadata/archive"
+
+# Color output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+# Check result tracking
+CHECKS_PASSED=0
+CHECKS_FAILED=0
+WARNINGS=0
+
+print_header() {
+    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${BLUE}Agent Orchestration System - Health Check${NC}"
+    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}\n"
+}
+
+check_pass() {
+    echo -e "${GREEN}✓${NC} $1"
+    ((CHECKS_PASSED++))
+}
+
+check_fail() {
+    echo -e "${RED}✗${NC} $1"
+    ((CHECKS_FAILED++))
+}
+
+check_warn() {
+    echo -e "${YELLOW}⚠${NC} $1"
+    ((WARNINGS++))
+}
+
+info() {
+    echo -e "${BLUE}ℹ${NC} $1"
+}
+
+section() {
+    echo -e "\n${BLUE}▸ $1${NC}"
+}
+
+# Check if command exists
+command_exists() {
+    command -v "$1" &>/dev/null
+}
+
+# Check tmux
+check_tmux() {
+    section "tmux (Session Management)"
+
+    if command_exists tmux; then
+        local version=$(tmux -V 2>&1 | awk '{print $2}')
+        check_pass "tmux installed (version $version)"
+
+        # Check if tmux server is running
+        if tmux list-sessions &>/dev/null; then
+            local session_count=$(tmux list-sessions 2>/dev/null | wc -l | tr -d ' ')
+            info "tmux server running with $session_count session(s)"
+        else
+            info "tmux server not running (will start on first spawn)"
+        fi
+    else
+        check_fail "tmux not found"
+        info "Install: brew install tmux"
+        return 1
+    fi
+}
+
+# Check GitHub Copilot CLI
+check_copilot() {
+    section "GitHub Copilot CLI"
+
+    if command_exists gh; then
+        local gh_version=$(gh --version 2>&1 | head -1 | awk '{print $3}')
+        check_pass "gh CLI installed (version $gh_version)"
+
+        # Check if copilot extension is installed
+        if gh copilot --help &>/dev/null; then
+            check_pass "gh copilot extension available"
+
+            # Check authentication
+            if gh auth status &>/dev/null; then
+                check_pass "GitHub authenticated"
+            else
+                check_warn "GitHub not authenticated"
+                info "Run: gh auth login"
+            fi
+        else
+            check_fail "gh copilot extension not installed"
+            info "Install: gh extension install github/gh-copilot"
+            return 1
+        fi
+    else
+        check_fail "gh CLI not found"
+        info "Install: brew install gh"
+        return 1
+    fi
+}
+
+# Check jq for JSON parsing
+check_jq() {
+    section "jq (JSON Processing)"
+
+    if command_exists jq; then
+        local version=$(jq --version 2>&1)
+        check_pass "jq installed ($version)"
+    else
+        check_warn "jq not found (optional, but recommended)"
+        info "Install: brew install jq"
+        info "Fallback parsing will be used without jq"
+    fi
+}
+
+# Check directory structure
+check_directories() {
+    section "Directory Structure"
+
+    if [[ -d "$METADATA_DIR" ]]; then
+        check_pass "Metadata directory exists: $METADATA_DIR"
+
+        # Check permissions
+        if [[ -w "$METADATA_DIR" ]]; then
+            check_pass "Metadata directory is writable"
+        else
+            check_fail "Metadata directory not writable"
+        fi
+
+        # Count active sessions
+        local active_count=$(find "$METADATA_DIR" -maxdepth 1 -name "*.json" -type f 2>/dev/null | wc -l | tr -d ' ')
+        info "Active metadata files: $active_count"
+    else
+        check_warn "Metadata directory does not exist (will be created on first spawn)"
+    fi
+
+    if [[ -d "$METADATA_ARCHIVE_DIR" ]]; then
+        local archive_count=$(find "$METADATA_ARCHIVE_DIR" -name "*.json" -type f 2>/dev/null | wc -l | tr -d ' ')
+        local archive_size=$(du -sh "$METADATA_ARCHIVE_DIR" 2>/dev/null | awk '{print $1}')
+        info "Archive: $archive_count files ($archive_size)"
+    fi
+}
+
+# Check agent scripts
+check_agent_scripts() {
+    section "Agent Management Scripts"
+
+    local script_count=0
+    local missing_count=0
+
+    local expected_scripts=(
+        "agent"
+        "agent-spawn"
+        "agent-list"
+        "agent-watch"
+        "agent-status"
+        "agent-read"
+        "agent-send"
+        "agent-approve"
+        "agent-kill"
+        "agent-cleanup"
+        "agent-metadata"
+    )
+
+    for script in "${expected_scripts[@]}"; do
+        if [[ -x "$AGENT_DIR/$script" ]]; then
+            ((script_count++))
+        else
+            ((missing_count++))
+        fi
+    done
+
+    if [[ $missing_count -eq 0 ]]; then
+        check_pass "All core scripts present and executable ($script_count scripts)"
+    else
+        check_warn "$missing_count scripts missing or not executable"
+    fi
+}
+
+# Check MCP server
+check_mcp_server() {
+    section "MCP Server"
+
+    local mcp_dir="$AGENT_DIR/../mcp-servers/agent"
+
+    if [[ -f "$mcp_dir/index.js" ]]; then
+        check_pass "MCP server found: $mcp_dir/index.js"
+
+        if [[ -f "$mcp_dir/package.json" ]]; then
+            check_pass "package.json present"
+
+            if [[ -d "$mcp_dir/node_modules" ]]; then
+                check_pass "Dependencies installed"
+            else
+                check_warn "Dependencies not installed"
+                info "Run: cd $mcp_dir && npm install"
+            fi
+        fi
+    else
+        check_fail "MCP server not found"
+    fi
+}
+
+# Check active agent sessions
+check_active_sessions() {
+    section "Active Agent Sessions"
+
+    if command_exists tmux; then
+        local agent_sessions=$(tmux list-sessions 2>/dev/null | grep -c "^agent-" || echo 0)
+
+        if [[ $agent_sessions -gt 0 ]]; then
+            info "$agent_sessions active agent session(s) running"
+
+            # List them
+            tmux list-sessions 2>/dev/null | grep "^agent-" | while read -r line; do
+                local session_name=$(echo "$line" | awk -F: '{print $1}')
+                echo "  - $session_name"
+            done
+        else
+            info "No active agent sessions"
+        fi
+    fi
+}
+
+# Test basic workflow (optional)
+test_workflow() {
+    section "Basic Workflow Test"
+
+    info "Testing metadata operations..."
+
+    # Test metadata directory creation
+    if [[ ! -d "$METADATA_DIR" ]]; then
+        if mkdir -p "$METADATA_DIR" &>/dev/null; then
+            check_pass "Can create metadata directory"
+        else
+            check_fail "Cannot create metadata directory"
+            return 1
+        fi
+    fi
+
+    # Test write permissions with temp file
+    local test_file="$METADATA_DIR/.health-check-$$"
+    if echo '{"test":true}' > "$test_file" 2>/dev/null; then
+        check_pass "Can write to metadata directory"
+        rm -f "$test_file"
+    else
+        check_fail "Cannot write to metadata directory"
+        return 1
+    fi
+
+    info "Basic workflow test passed"
+}
+
+# Print summary
+print_summary() {
+    echo -e "\n${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${BLUE}Summary${NC}\n"
+
+    echo -e "  ${GREEN}Passed:${NC}   $CHECKS_PASSED"
+    echo -e "  ${YELLOW}Warnings:${NC} $WARNINGS"
+    echo -e "  ${RED}Failed:${NC}   $CHECKS_FAILED"
+
+    echo ""
+
+    if [[ $CHECKS_FAILED -eq 0 ]]; then
+        echo -e "${GREEN}✓ System is healthy and ready for agent orchestration${NC}"
+        if [[ $WARNINGS -gt 0 ]]; then
+            echo -e "${YELLOW}⚠ Some optional features missing (see warnings above)${NC}"
+        fi
+        return 0
+    else
+        echo -e "${RED}✗ System has issues that need to be resolved${NC}"
+        echo -e "${YELLOW}ℹ Check failed items above for resolution steps${NC}"
+        return 1
+    fi
+}
+
+# Main execution
+main() {
+    print_header
+
+    check_tmux || true
+    check_copilot || true
+    check_jq || true
+    check_directories || true
+    check_agent_scripts || true
+    check_mcp_server || true
+    check_active_sessions || true
+
+    if [[ "${1:-}" == "--test" ]]; then
+        test_workflow || true
+    fi
+
+    print_summary
+}
+
+# Show help
+if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+    cat << 'EOF'
+agent-doctor - System health check and diagnostics
+
+USAGE:
+  agent-doctor [--test]
+
+OPTIONS:
+  --test    Run basic workflow test (creates temp files)
+  --help    Show this help message
+
+DESCRIPTION:
+  Validates that all dependencies and configurations are correct
+  for running autonomous agent sessions. Checks:
+
+  - tmux (session management)
+  - GitHub Copilot CLI (agent runtime)
+  - jq (JSON parsing, optional)
+  - Directory structure and permissions
+  - Agent management scripts
+  - MCP server installation
+  - Active sessions
+
+EXIT CODES:
+  0    All critical checks passed
+  1    One or more critical checks failed
+
+EXAMPLES:
+  agent-doctor              # Run health check
+  agent-doctor --test       # Include workflow test
+
+EOF
+    exit 0
+fi
+
+main "$@"
