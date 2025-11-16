@@ -256,3 +256,96 @@ cleanup_stale_metadata() {
         echo "Skipped $protected_count protected critical sessions (use --force)"
     fi
 }
+
+# Clean old archived metadata
+# Usage: clean_archive DAYS [--force]
+clean_archive() {
+    local days="${1:-90}"
+    local force=false
+
+    if [[ "$2" == "--force" ]]; then
+        force=true
+    fi
+
+    if [[ ! -d "$METADATA_ARCHIVE_DIR" ]]; then
+        echo "No archive directory found"
+        return 0
+    fi
+
+    echo "Searching for archive files older than $days days..."
+
+    local count=0
+    local total_size=0
+
+    # Find files older than N days
+    while IFS= read -r file; do
+        local size=$(stat -f%z "$file" 2>/dev/null || echo 0)
+        total_size=$((total_size + size))
+        ((count++))
+
+        if [[ "$force" == "true" ]]; then
+            rm -f "$file"
+            echo "  Deleted: $(basename "$file")"
+        else
+            echo "  Would delete: $(basename "$file")"
+        fi
+    done < <(find "$METADATA_ARCHIVE_DIR" -name "*.json" -type f -mtime +${days} 2>/dev/null)
+
+    if [[ $count -eq 0 ]]; then
+        echo "No files found older than $days days"
+        return 0
+    fi
+
+    local size_kb=$((total_size / 1024))
+
+    if [[ "$force" == "true" ]]; then
+        echo "Deleted $count files ($size_kb KB)"
+    else
+        echo "Found $count files ($size_kb KB) - use --force to delete"
+    fi
+}
+
+# CLI interface (when executed directly)
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    case "${1:-}" in
+        --archive-stale|archive-stale)
+            cleanup_stale_metadata "${@:2}"
+            ;;
+        --clean-archive|clean-archive)
+            clean_archive "${@:2}"
+            ;;
+        --list|list)
+            list_metadata
+            ;;
+        --help|help|-h|"")
+            cat << 'EOF'
+agent-metadata - Metadata management utilities
+
+USAGE:
+  agent-metadata <command> [options]
+
+COMMANDS:
+  archive-stale [--force]         Move completed sessions to archive
+  clean-archive [DAYS] [--force]  Delete archive files older than DAYS (default: 90)
+  list                            List all active metadata files
+  help                            Show this help message
+
+EXAMPLES:
+  agent-metadata archive-stale           # Move completed sessions to archive
+  agent-metadata clean-archive 30        # Show files older than 30 days
+  agent-metadata clean-archive 90 --force  # Delete files older than 90 days
+  agent-metadata list                    # List active metadata
+
+LOCATIONS:
+  Active:  ~/.shelfwood/agent/metadata/
+  Archive: ~/.shelfwood/agent/metadata/archive/
+
+EOF
+            ;;
+        *)
+            echo "Unknown command: $1" >&2
+            echo "Run 'agent-metadata help' for usage" >&2
+            exit 1
+            ;;
+    esac
+fi
