@@ -236,7 +236,7 @@ cleanup_stale_metadata() {
     local stale_count=0
     local protected_count=0
 
-    list_metadata | while read -r session; do
+    while read -r session; do
         local state=$(detect_session_state "$session")
         local importance=$(get_metadata "$session" "importance")
 
@@ -249,7 +249,7 @@ cleanup_stale_metadata() {
             archive_metadata "$session"
             ((stale_count++))
         fi
-    done
+    done < <(list_metadata)
 
     echo "Cleaned up $stale_count stale sessions"
     if [[ $protected_count -gt 0 ]]; then
