@@ -1,0 +1,25 @@
+#!/bin/bash
+# Wrapper script for copilot-agent command
+# Detects installation location and executes main agent script
+
+# Try to find agent installation
+if [[ -n "${AGENT_HOME}" ]]; then
+    # Use explicit AGENT_HOME if set
+    AGENT_DIR="$AGENT_HOME/src/commands"
+elif [[ -f "$HOME/.local/share/copilot-agent/src/commands/agent" ]]; then
+    # XDG standard location
+    AGENT_DIR="$HOME/.local/share/copilot-agent/src/commands"
+else
+    # Development mode: check if we're in repo
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    if [[ -f "$SCRIPT_DIR/../agent/agent" ]]; then
+        AGENT_DIR="$SCRIPT_DIR/../agent"
+    else
+        echo "Error: Cannot find agent installation" >&2
+        echo "Set AGENT_HOME or run install.sh" >&2
+        exit 1
+    fi
+fi
+
+# Execute main agent script
+exec "$AGENT_DIR/agent" "$@"

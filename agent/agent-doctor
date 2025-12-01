@@ -4,9 +4,11 @@
 
 # Note: Not using set -e because we want to continue checking even if individual tests fail
 
-AGENT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-METADATA_DIR="$HOME/.shelfwood/agent/metadata"
-METADATA_ARCHIVE_DIR="$HOME/.shelfwood/agent/metadata/archive"
+# Source configuration
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/../src/lib/config.sh"
+
+AGENT_DIR="$SCRIPT_DIR"
 
 # Color output
 RED='\033[0;31m'

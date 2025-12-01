@@ -2,12 +2,12 @@
 # agent-metadata - Metadata management utilities for agent sessions
 # Sourced by agent commands to handle session metadata
 
-METADATA_DIR="$HOME/.shelfwood/agent/metadata"
-METADATA_ARCHIVE_DIR="$HOME/.shelfwood/agent/metadata/archive"
+# Source configuration
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/../src/lib/config.sh"
 
-# Ensure metadata directories exist
-mkdir -p "$METADATA_DIR"
-mkdir -p "$METADATA_ARCHIVE_DIR"
+# Initialize directories
+init_agent_directories
 
 # Validate session name format
 # Usage: validate_session_name SESSION_NAME

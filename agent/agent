@@ -10,6 +10,10 @@
 
 set -e
 
+# Source configuration
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/../src/lib/config.sh"
+
 AGENT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SUBCOMMAND="${1:-}"
 

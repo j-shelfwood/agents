@@ -1,0 +1,46 @@
+{
+  "name": "copilot-agent-orchestrator",
+  "version": "1.0.0",
+  "description": "Autonomous agent orchestration for GitHub Copilot CLI with MCP server for Claude Code integration",
+  "keywords": [
+    "copilot",
+    "github-copilot",
+    "mcp",
+    "agent",
+    "orchestration",
+    "autonomous",
+    "claude-code",
+    "tmux"
+  ],
+  "bin": {
+    "agent": "./bin/agent"
+  },
+  "scripts": {
+    "test": "bash tests/orchestration-patterns.sh",
+    "install": "./install.sh"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/shelfwood/agents.git"
+  },
+  "author": "Shelfwood",
+  "license": "MIT",
+  "engines": {
+    "node": ">=16.0.0"
+  },
+  "os": [
+    "darwin",
+    "linux"
+  ],
+  "files": [
+    "agent/",
+    "src/",
+    "mcp-servers/",
+    "docs/",
+    "bin/",
+    "install.sh",
+    "LICENSE",
+    "README.md",
+    "CHANGELOG.md"
+  ]
+}

@@ -6,8 +6,11 @@
 
 set -e
 
-# Source metadata utilities
+# Source configuration
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/../src/lib/config.sh"
+
+# Source metadata utilities
 source "$SCRIPT_DIR/agent-metadata"
 
 RED='\033[0;31m'
@@ -232,11 +235,11 @@ fi
 
 # Send initial task prompt if provided
 if [[ -n "$TASK_FILE" ]]; then
-    # Path to system instructions in Obsidian vault
-    SYSTEM_INSTRUCTIONS="$HOME/Obsidian/Shelfwood/3. Resources/2. Prompt book/Code editor/Copilot Agent System Instructions.md"
+    # Path to system instructions (from config)
+    SYSTEM_INSTRUCTIONS="$AGENT_SYSTEM_INSTRUCTIONS_PATH"
 
     # Build combined prompt with system instructions + task
-    if [[ -f "$SYSTEM_INSTRUCTIONS" ]]; then
+    if [[ -n "$SYSTEM_INSTRUCTIONS" && -f "$SYSTEM_INSTRUCTIONS" ]]; then
         COMBINED_PROMPT="# System Instructions
 
 $(cat "$SYSTEM_INSTRUCTIONS")

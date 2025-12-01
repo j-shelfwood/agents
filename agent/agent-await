@@ -4,8 +4,11 @@
 
 set -e
 
-# Source metadata utilities
+# Source configuration
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/../src/lib/config.sh"
+
+# Source metadata utilities
 source "$SCRIPT_DIR/agent-metadata"
 
 RED='\033[0;31m'
@@ -15,8 +18,6 @@ BLUE='\033[0;34m'
 CYAN='\033[0;36m'
 MAGENTA='\033[0;35m'
 NC='\033[0m'
-
-AGENT_CMD="$HOME/.shelfwood/agent/agent"
 
 # Usage function
 usage() {

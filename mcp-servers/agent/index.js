@@ -10,7 +10,24 @@ import { exec, spawn } from 'child_process';
 import { promisify } from 'util';
 
 const execAsync = promisify(exec);
-const AGENT_CMD = process.env.HOME + '/projects/shelfwood-agents/agent/agent';
+
+/**
+ * Agent command resolution:
+ * 1. AGENT_BIN_PATH environment variable (explicit override)
+ * 2. XDG data directory: ~/.local/share/copilot-agent/bin/agent
+ * 3. PATH lookup (assumes global install)
+ *
+ * Configure via:
+ *   export AGENT_BIN_PATH="/path/to/copilot-agent/bin/agent"
+ *
+ * Or in Claude Code MCP settings:
+ *   "env": {
+ *     "AGENT_BIN_PATH": "/path/to/installation/bin/agent"
+ *   }
+ */
+const AGENT_CMD = process.env.AGENT_BIN_PATH
+  || process.env.HOME + '/.local/share/copilot-agent/bin/agent'
+  || 'agent'; // Assumes in PATH
 
 /**
  * Validate session name format
@@ -613,7 +630,7 @@ class AgentMCPServer {
       } catch {}
 
       // Check metadata directory
-      const metadataDir = process.env.HOME + '/projects/shelfwood-agents/agent/metadata';
+      const metadataDir = process.env.HOME + '/.local/share/copilot-agent/metadata';
       try {
         await fs.access(metadataDir);
         checks.metadata_dir_exists = true;

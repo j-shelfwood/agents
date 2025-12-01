@@ -46,13 +46,15 @@ cd mcp-servers/agent
 npm install
 ```
 
-### 2. Configure Zsh
+### 2. Configure Shell Alias
 
-The agent command is aliased in `~/.shelfwood/aliases.zsh`:
+Add to your shell configuration (e.g., `~/.zshrc` or `~/.bashrc`):
 
 ```bash
-alias agent="~/projects/shelfwood-agents/agent/agent"
+alias agent="/path/to/shelfwood-agents/agent/agent"
 ```
+
+Replace `/path/to/shelfwood-agents` with your actual installation path.
 
 ### 3. Configure Claude Code
 
@@ -64,13 +66,15 @@ Add to Claude Code MCP settings (`mcp_settings.json`):
     "agent": {
       "command": "node",
       "args": [
-        "/Users/shelfwood/projects/shelfwood-agents/mcp-servers/agent/index.js"
+        "/absolute/path/to/shelfwood-agents/mcp-servers/agent/index.js"
       ],
       "type": "stdio"
     }
   }
 }
 ```
+
+Replace `/absolute/path/to/shelfwood-agents` with your actual installation path.
 
 ## Usage
 
@@ -104,8 +108,8 @@ agent kill agent-myapp-1234
 ```javascript
 // Launch agent programmatically
 mcp__agent__launch_agent({
-  project_dir: "/Users/shelfwood/projects/myapp",
-  task_file: "/Users/shelfwood/projects/myapp/tasks/refactor.md",
+  project_dir: "/path/to/your/project",
+  task_file: "/path/to/your/project/tasks/refactor.md",
   session_name: "refactor-auth"  // optional
 });
 
