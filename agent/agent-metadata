@@ -164,6 +164,49 @@ detect_session_state() {
     fi
 }
 
+# Detect agent activity state
+# Usage: detect_agent_activity SESSION_NAME
+# Returns: waiting_for_input|error|active|completed
+detect_agent_activity() {
+    local session="$1"
+
+    # Check if session exists
+    if ! tmux has-session -t "$session" 2>/dev/null; then
+        echo "completed"
+        return
+    fi
+
+    # Capture recent output (last 20 lines for better context)
+    local output=$(tmux capture-pane -t "$session" -p -S -20 2>/dev/null || echo "")
+
+    if [[ -z "$output" ]]; then
+        echo "active"
+        return
+    fi
+
+    # Check for waiting/confirmation patterns (most specific first)
+    if echo "$output" | grep -qE "Ctrl\+c Exit|Remaining requests:|> $"; then
+        # Copilot CLI prompt detected
+        echo "waiting_for_input"
+        return
+    fi
+
+    if echo "$output" | grep -qiE "\(y/n\)|\(yes/no\)|continue\?|proceed\?|confirm\?|allow\?|approve\?"; then
+        # Question/confirmation prompt
+        echo "waiting_for_input"
+        return
+    fi
+
+    # Check for error indicators
+    if echo "$output" | grep -qiE "^error:|^fatal:|exception:|command failed|cannot|unable to"; then
+        echo "error"
+        return
+    fi
+
+    # Default to active
+    echo "active"
+}
+
 # Update last activity timestamp
 # Usage: touch_metadata SESSION_NAME
 touch_metadata() {

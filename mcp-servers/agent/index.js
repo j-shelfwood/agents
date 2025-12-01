@@ -39,7 +39,7 @@ const validateSessionName = (name) => {
 /**
  * Execute spawn with promise wrapper and timeout
  */
-const spawnWithTimeout = (cmd, args, timeoutMs = 30000) => {
+const launchWithTimeout = (cmd, args, timeoutMs = 30000) => {
   return new Promise((resolve, reject) => {
     const child = spawn(cmd, args);
 
@@ -91,14 +91,14 @@ const enhanceError = (error, operation) => {
   let helpText = '';
 
   if (error.message.includes('not found') && error.message.includes('Session')) {
-    helpText = '\n\nTip: Use list_agents() to see active sessions or spawn_agent() to create a new one.';
+    helpText = '\n\nTip: Use list_agents() to see active sessions or launch_agent() to create a new one.';
   } else if (error.message.includes('timeout')) {
     helpText = '\n\nTip: The agent may still be working. Use read_agent_output() to check progress.';
-  } else if (error.code === 2 && operation === 'watch_agents') {
-    // Exit code 2 from watch = timeout, not error
+  } else if (error.code === 2 && operation === 'await_agents') {
+    // Exit code 2 from await = timeout, not error
     return {
       isTimeout: true,
-      message: 'Watch timeout reached. All monitored agents are still active.\n' + (error.stdout || ''),
+      message: 'Await timeout reached. All monitored agents are still active.\n' + (error.stdout || ''),
     };
   } else if (error.message.includes('Invalid session name')) {
     helpText = '\n\nSession names must contain only letters, numbers, dashes, and underscores.';
@@ -141,8 +141,8 @@ class AgentMCPServer {
     this.server.setRequestHandler(ListToolsRequestSchema, async () => ({
       tools: [
         {
-          name: 'spawn_agent',
-          description: 'Spawn a new autonomous Copilot agent in a detached tmux session with task file. Returns session name for monitoring.',
+          name: 'launch_agent',
+          description: 'Launch a new autonomous Copilot agent in a detached tmux session with task file. Returns session name for monitoring.',
           inputSchema: {
             type: 'object',
             properties: {
@@ -163,8 +163,8 @@ class AgentMCPServer {
           },
         },
         {
-          name: 'watch_agents',
-          description: 'Watch all active agents and block until one requires attention (completes, waits for input, or errors). Returns immediately when state change detected.',
+          name: 'await_agents',
+          description: 'BLOCKING operation: Waits until any agent requires attention (completes, waits for input, or errors). Returns immediately on state change. Use this INSTEAD of manual polling loops. Pattern: launch → await → handle → await → repeat.',
           inputSchema: {
             type: 'object',
             properties: {
@@ -179,7 +179,7 @@ class AgentMCPServer {
               sessions: {
                 type: 'array',
                 items: { type: 'string' },
-                description: 'Specific session names to watch (watches all if not provided)',
+                description: 'Specific session names to await (awaits all if not provided)',
               },
             },
           },
@@ -290,9 +290,9 @@ class AgentMCPServer {
 
       try {
         switch (name) {
-          case 'spawn_agent':
-            return await this.spawnAgent(args);
-          case 'watch_agents':
+          case 'launch_agent':
+            return await this.launchAgent(args);
+          case 'await_agents':
             return await this.watchAgents(args);
           case 'list_agents':
             return await this.listAgents();
@@ -325,7 +325,7 @@ class AgentMCPServer {
     });
   }
 
-  async spawnAgent(args) {
+  async launchAgent(args) {
     const { project_dir, task_file, session_name } = args;
 
     // Validate session name if provided
@@ -334,15 +334,15 @@ class AgentMCPServer {
     }
 
     // Build argument array (no shell interpretation)
-    const spawnArgs = ['spawn'];
+    const launchArgs = ['launch'];
     if (session_name) {
-      spawnArgs.push('--session', session_name);
+      launchArgs.push('--session', session_name);
     }
-    spawnArgs.push(project_dir, task_file);
+    launchArgs.push(project_dir, task_file);
 
     try {
-      // 60s timeout for spawn (needs to setup tmux + send initial prompt)
-      const { stdout } = await spawnWithTimeout(AGENT_CMD, spawnArgs, 60000);
+      // 60s timeout for launch (needs to setup tmux + send initial prompt)
+      const { stdout } = await launchWithTimeout(AGENT_CMD, launchArgs, 60000);
 
       // Extract session name from output
       const sessionMatch = stdout.match(/Session:\s+(\S+)/);
@@ -352,12 +352,12 @@ class AgentMCPServer {
         content: [
           {
             type: 'text',
-            text: `Agent spawned successfully\n\nSession: ${extractedSession}\nProject: ${project_dir}\nTask: ${task_file}\n\n${stdout}`,
+            text: `Agent launched successfully\n\nSession: ${extractedSession}\nProject: ${project_dir}\nTask: ${task_file}\n\n${stdout}`,
           },
         ],
       };
     } catch (error) {
-      const enhanced = enhanceError(error, 'spawn_agent');
+      const enhanced = enhanceError(error, 'launch_agent');
       throw new Error(enhanced.message);
     }
   }
@@ -371,7 +371,7 @@ class AgentMCPServer {
     }
 
     // Build argument array
-    const watchArgs = ['watch', '--timeout', String(timeout), '--interval', String(interval)];
+    const watchArgs = ['await', '--timeout', String(timeout), '--interval', String(interval)];
 
     if (sessions && sessions.length > 0) {
       watchArgs.push('--sessions', sessions.join(','));
@@ -380,7 +380,7 @@ class AgentMCPServer {
     try {
       // Add 30s buffer to MCP timeout vs bash script timeout
       const mcpTimeout = (timeout + 30) * 1000;
-      const { stdout } = await spawnWithTimeout(AGENT_CMD, watchArgs, mcpTimeout);
+      const { stdout } = await launchWithTimeout(AGENT_CMD, watchArgs, mcpTimeout);
 
       return {
         content: [
@@ -391,7 +391,7 @@ class AgentMCPServer {
         ],
       };
     } catch (error) {
-      const enhanced = enhanceError(error, 'watch_agents');
+      const enhanced = enhanceError(error, 'await_agents');
 
       // Exit code 2 = timeout (normal), not error
       if (enhanced.isTimeout) {
@@ -429,7 +429,7 @@ class AgentMCPServer {
     const maxLines = Math.min(lines, 200);
 
     try {
-      const { stdout } = await spawnWithTimeout(
+      const { stdout } = await launchWithTimeout(
         AGENT_CMD,
         ['read', session_name, String(maxLines)],
         10000 // 10s timeout
@@ -455,7 +455,7 @@ class AgentMCPServer {
     validateSessionName(session_name);
 
     try {
-      const { stdout } = await spawnWithTimeout(
+      const { stdout } = await launchWithTimeout(
         AGENT_CMD,
         ['status', session_name],
         10000 // 10s timeout
@@ -561,7 +561,7 @@ class AgentMCPServer {
     validateSessionName(session_name);
 
     try {
-      const { stdout } = await spawnWithTimeout(
+      const { stdout } = await launchWithTimeout(
         AGENT_CMD,
         ['kill', session_name],
         10000 // 10s timeout
@@ -608,7 +608,7 @@ class AgentMCPServer {
 
       // Check tmux
       try {
-        await spawnWithTimeout('tmux', ['-V'], 5000);
+        await launchWithTimeout('tmux', ['-V'], 5000);
         checks.tmux_available = true;
       } catch {}
 
@@ -630,7 +630,7 @@ class AgentMCPServer {
       // Count active sessions
       if (checks.tmux_available) {
         try {
-          const { stdout } = await spawnWithTimeout(AGENT_CMD, ['list'], 10000);
+          const { stdout } = await launchWithTimeout(AGENT_CMD, ['list'], 10000);
           const sessionLines = stdout.split('\n').filter(line =>
             line.includes('agent-') && !line.includes('Session Name')
           );

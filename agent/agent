@@ -21,8 +21,8 @@ USAGE:
   agent <command> [arguments]
 
 COMMANDS:
-  spawn <project-dir> [task-file]     Spawn new agent session
-  watch [options]                     Watch agents until state change
+  launch <project-dir> [task-file]    Launch new agent session
+  await [options]                     Wait for agents until state change
   kill <session-name>                 Terminate agent session
   send <session-name> <message>       Send input to agent
   read <session-name>                 Read agent output
@@ -35,8 +35,8 @@ COMMANDS:
   doctor [--test]                     System health check and diagnostics
 
 EXAMPLES:
-  agent spawn ~/projects/myapp tasks/refactor.md
-  agent watch                          # Block until state change
+  agent launch ~/projects/myapp tasks/refactor.md
+  agent await                          # Block until state change
   agent list
   agent status agent-myapp-1234
   agent send agent-myapp-1234 "Use Pest framework"
@@ -62,6 +62,8 @@ fi
 if [[ "$SUBCOMMAND" == "--help" || "$SUBCOMMAND" == "-h" ]]; then
     usage
 fi
+
+# No aliases needed - await is the primary command
 
 # Find subcommand script
 SUBCOMMAND_SCRIPT="$AGENT_DIR/agent-$SUBCOMMAND"

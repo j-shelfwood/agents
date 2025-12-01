@@ -6,7 +6,7 @@ Autonomous agent orchestration system for GitHub Copilot CLI.
 
 This repository contains the infrastructure for managing and monitoring autonomous coding agents powered by GitHub Copilot CLI. It consists of two main components:
 
-1. **Agent Management System** (`agent/`) - Bash scripts for spawning, monitoring, and controlling agent sessions
+1. **Agent Management System** (`agent/`) - Bash scripts for launching, monitoring, and controlling agent sessions
 2. **MCP Server** (`mcp-servers/agent/`) - Model Context Protocol server for Claude Code integration
 
 ## Architecture
@@ -15,9 +15,9 @@ This repository contains the infrastructure for managing and monitoring autonomo
 shelfwood-agents/
 ├── agent/                      # Agent management CLI
 │   ├── agent                   # Main command dispatcher
-│   ├── agent-spawn             # Spawn new agent sessions
+│   ├── agent-launch            # Launch new agent sessions
 │   ├── agent-list              # List active agents
-│   ├── agent-watch             # Monitor for state changes
+│   ├── agent-await             # Monitor for state changes
 │   ├── agent-status            # Check agent state
 │   ├── agent-read              # View agent output
 │   ├── agent-send              # Send input to agent
@@ -77,8 +77,8 @@ Add to Claude Code MCP settings (`mcp_settings.json`):
 ### Basic Commands
 
 ```bash
-# Spawn a new agent
-agent spawn ~/projects/myapp tasks/refactor.md
+# Launch a new agent
+agent launch ~/projects/myapp tasks/refactor.md
 
 # List all active agents
 agent list
@@ -92,8 +92,8 @@ agent read agent-myapp-1234
 # Send message to agent
 agent send agent-myapp-1234 "Use Pest framework"
 
-# Watch for state changes (blocks until agent needs attention)
-agent watch
+# Wait for state changes (blocks until agent needs attention)
+agent await  # Recommended (watch is deprecated)
 
 # Kill agent
 agent kill agent-myapp-1234
@@ -102,15 +102,15 @@ agent kill agent-myapp-1234
 ### MCP Tools (from Claude Code)
 
 ```javascript
-// Spawn agent programmatically
-mcp__agent__spawn_agent({
+// Launch agent programmatically
+mcp__agent__launch_agent({
   project_dir: "/Users/shelfwood/projects/myapp",
   task_file: "/Users/shelfwood/projects/myapp/tasks/refactor.md",
   session_name: "refactor-auth"  // optional
 });
 
-// Watch all agents
-mcp__agent__watch_agents({
+// Await agents (blocks until state change)
+mcp__agent__await_agents({
   timeout: 300,     // 5 minutes
   interval: 3       // check every 3s
 });
@@ -161,6 +161,60 @@ mcp__agent__health_check();
 3. **Interact** - Send commands or approve actions as needed
 4. **Complete** - Review work and terminate session
 
+### Orchestration Patterns
+
+#### ✅ Correct: Event-Driven Monitoring
+
+Use `await_agents()` for efficient event-driven monitoring:
+
+```javascript
+// Launch multiple agents in parallel
+mcp__agent__launch_agent({project_dir: "/path/a", task_file: "task1.md"});
+mcp__agent__launch_agent({project_dir: "/path/b", task_file: "task2.md"});
+mcp__agent__launch_agent({project_dir: "/path/c", task_file: "task3.md"});
+
+// Await blocks until first state change (WAITING, COMPLETED, ERROR)
+const result1 = mcp__agent__await_agents({timeout: 600});
+// → Returns immediately when any agent needs attention
+
+// Handle the specific agent that triggered
+mcp__agent__send_to_agent({session_name: "agent-a-123", message: "Continue"});
+
+// Await next event
+const result2 = mcp__agent__await_agents({timeout: 600});
+// → Returns when another agent changes state
+
+mcp__agent__kill_agent({session_name: "agent-b-456"});
+
+// Continue until all agents handled
+const result3 = mcp__agent__await_agents({timeout: 600});
+```
+
+#### ❌ Wrong: Manual Polling Anti-Pattern
+
+```javascript
+// DON'T DO THIS - wastes resources and misses events!
+mcp__agent__launch_agent({...});
+
+// ❌ Manual polling is inefficient
+sleep(30);
+mcp__agent__check_agent_status({session_name: "..."});
+sleep(30);
+mcp__agent__check_agent_status({session_name: "..."});
+// ... repeating indefinitely
+
+// ✅ Instead: Use await_agents() - it blocks until state change
+mcp__agent__await_agents({timeout: 600});
+```
+
+**Why `await_agents()` is better:**
+- **Event-driven**: Returns immediately when state changes (not on fixed intervals)
+- **Resource efficient**: Single blocking call vs repeated polling
+- **Handles race conditions**: Detects pre-existing states automatically
+- **Multi-agent support**: Monitors all agents simultaneously
+
+**📚 See [docs/ORCHESTRATION_PATTERNS.md](docs/ORCHESTRATION_PATTERNS.md) for comprehensive patterns and examples.**
+
 ### Metadata Tracking
 
 Each agent session has metadata stored in `agent/metadata/<session-name>.json`:
@@ -178,6 +232,21 @@ Each agent session has metadata stored in `agent/metadata/<session-name>.json`:
   "last_activity": "2025-11-14T18:10:00Z"
 }
 ```
+
+## Testing
+
+Run orchestration pattern tests to validate correct behavior:
+
+```bash
+./tests/orchestration-patterns.sh
+```
+
+Tests validate:
+- ✅ Pre-existing state detection (race condition fix)
+- ✅ Event-driven monitoring vs manual polling
+- ✅ Multi-agent parallel orchestration
+- ✅ Command aliases (`await` = `watch`)
+- ✅ Usage hints in output
 
 ## Contributing
 

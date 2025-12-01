@@ -1,0 +1,346 @@
+#!/bin/bash
+# Await Agent Sessions for State Changes
+# Blocks until one or more agents require attention
+
+set -e
+
+# Source metadata utilities
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/agent-metadata"
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+MAGENTA='\033[0;35m'
+NC='\033[0m'
+
+AGENT_CMD="$HOME/.shelfwood/agent/agent"
+
+# Usage function
+usage() {
+    cat << 'EOF'
+Usage: agent await [OPTIONS]
+
+Await all active agent sessions and block until state change detected.
+Returns immediately when any agent completes, waits for input, or errors.
+
+OPTIONS:
+  --timeout <seconds>    Maximum wait time (default: 300s/5min, 0=infinite)
+  --interval <seconds>   Polling interval (default: 3s)
+  --sessions <names>     Await specific sessions only (comma-separated)
+  -h, --help             Show this help message
+
+DETECTION TRIGGERS:
+  - Agent completes task (copilot exits)
+  - Agent waiting for input (output stops, contains question marks)
+  - Agent encounters error (stderr output)
+  - New output detected (activity change)
+
+OUTPUT FORMAT:
+  STATUS: <COMPLETED|WAITING|ERROR|ACTIVE>
+  SESSION: <session-name>
+  MESSAGE: <relevant context>
+  TIMESTAMP: <when detected>
+
+EXAMPLES:
+
+# Await all agents until one needs attention
+agent await
+
+# Await with 10 minute timeout
+agent await --timeout 600
+
+# Await specific agents only
+agent await --sessions agent-myapp-1234,agent-myapp-5678
+
+# Fast polling for quick tasks (1 second interval)
+agent await --interval 1
+
+WORKFLOW INTEGRATION:
+
+# Launch multiple agents
+agent launch ~/project tasks/task1.md
+agent launch ~/project tasks/task2.md
+agent launch ~/project tasks/task3.md
+
+# Await until first state change
+agent await
+# → Returns: SESSION: agent-project-1234 | STATUS: COMPLETED
+
+# Handle completion
+agent read agent-project-1234
+agent kill agent-project-1234
+
+# Await next state change
+agent await
+# → Returns: SESSION: agent-project-5678 | STATUS: WAITING
+
+# Respond to waiting agent
+agent send agent-project-5678 "Continue with option A"
+
+# Continue awaiting...
+agent await
+EOF
+    exit 0
+}
+
+# Parse arguments
+TIMEOUT=300
+INTERVAL=3
+SPECIFIC_SESSIONS=""
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --timeout)
+            TIMEOUT="$2"
+            shift 2
+            ;;
+        --interval)
+            INTERVAL="$2"
+            shift 2
+            ;;
+        --sessions)
+            SPECIFIC_SESSIONS="$2"
+            shift 2
+            ;;
+        -h|--help)
+            usage
+            ;;
+        *)
+            echo -e "${RED}Error: Unknown option: $1${NC}"
+            usage
+            ;;
+    esac
+done
+
+echo -e "${BLUE}╔════════════════════════════════════════════════════════════════╗${NC}"
+echo -e "${BLUE}║${NC}  ${GREEN}Awaiting Agent Sessions${NC}                               ${BLUE}║${NC}"
+echo -e "${BLUE}╚════════════════════════════════════════════════════════════════╝${NC}"
+echo ""
+
+# Get list of sessions to await
+if [[ -n "$SPECIFIC_SESSIONS" ]]; then
+    IFS=',' read -ra SESSIONS <<< "$SPECIFIC_SESSIONS"
+
+    # Validate each session name
+    for session in "${SESSIONS[@]}"; do
+        if ! validate_session_name "$session"; then
+            exit 1
+        fi
+    done
+
+    echo -e "${CYAN}Watching:${NC}  ${SESSIONS[*]}"
+else
+    # Use metadata to discover agent sessions (reliable, not grep-based)
+    SESSIONS=()
+    while IFS= read -r session; do
+        # Only include if tmux session exists AND metadata shows it's an agent
+        if tmux has-session -t "$session" 2>/dev/null; then
+            # Verify it's actually running copilot
+            state=$(detect_session_state "$session")
+            if [[ "$state" == "running" ]]; then
+                SESSIONS+=("$session")
+            fi
+        fi
+    done < <(list_metadata)
+
+    if [[ ${#SESSIONS[@]} -eq 0 ]]; then
+        echo -e "${YELLOW}No active agent sessions found${NC}"
+        echo ""
+        echo -e "${CYAN}Launch agents first:${NC}"
+        echo -e "  ${GREEN}agent launch <project> <task>${NC}"
+        echo -e "  ${GREEN}mcp__agent__launch_agent(...)${NC} ${CYAN}(from Claude Code)${NC}"
+        exit 1
+    fi
+
+    echo -e "${CYAN}Awaiting:${NC}  ${#SESSIONS[@]} active sessions"
+fi
+
+echo -e "${CYAN}Timeout:${NC}   ${TIMEOUT}s ($(($TIMEOUT / 60)) minutes)"
+echo -e "${CYAN}Interval:${NC}  ${INTERVAL}s"
+echo ""
+echo -e "${CYAN}💡 Tip:${NC} await blocks until state change. No manual polling needed!"
+echo -e "${CYAN}   Pattern:${NC} launch → await → handle → await → repeat"
+echo ""
+echo -e "${YELLOW}Monitoring for state changes...${NC}"
+echo ""
+
+# Store initial state in temp files (bash 3.2 compatible)
+TMPDIR="${TMPDIR:-/tmp}"
+STATE_DIR=$(mktemp -d "$TMPDIR/agent-await.XXXXXX")
+trap "rm -rf '$STATE_DIR'" EXIT
+
+for session in "${SESSIONS[@]}"; do
+    if tmux has-session -t "$session" 2>/dev/null; then
+        # Capture last 20 lines as baseline
+        tmux capture-pane -t "$session" -p -S -20 2>/dev/null > "$STATE_DIR/$session.initial" || echo "" > "$STATE_DIR/$session.initial"
+    fi
+done
+
+# CRITICAL: Check if any agent is already in waiting/error/completed state BEFORE entering watch loop
+# This handles race condition where agent reaches terminal state before await starts
+for session in "${SESSIONS[@]}"; do
+    activity=$(detect_agent_activity "$session")
+
+    case "$activity" in
+        completed)
+            echo -e "${GREEN}╔════════════════════════════════════════════════════════════════╗${NC}"
+            echo -e "${GREEN}║${NC}  ${YELLOW}State Change Detected${NC}                                 ${GREEN}║${NC}"
+            echo -e "${GREEN}╚════════════════════════════════════════════════════════════════╝${NC}"
+            echo ""
+            echo -e "${CYAN}Session:${NC}   $session"
+            echo -e "${CYAN}Status:${NC}    ${MAGENTA}COMPLETED${NC}"
+            echo -e "${CYAN}Time:${NC}      0s (pre-existing state)"
+            echo ""
+            exit 0
+            ;;
+
+        waiting_for_input)
+            echo -e "${GREEN}╔════════════════════════════════════════════════════════════════╗${NC}"
+            echo -e "${GREEN}║${NC}  ${YELLOW}State Change Detected${NC}                                 ${GREEN}║${NC}"
+            echo -e "${GREEN}╚════════════════════════════════════════════════════════════════╝${NC}"
+            echo ""
+            echo -e "${CYAN}Session:${NC}   $session"
+            echo -e "${CYAN}Status:${NC}    ${YELLOW}WAITING_FOR_INPUT${NC}"
+            echo -e "${CYAN}Time:${NC}      0s (pre-existing state)"
+            echo ""
+            echo -e "${CYAN}Recent output:${NC}"
+            echo " ──────────────────────────────────────────────────────────────────────────────"
+            if [[ -f "$STATE_DIR/$session.initial" ]]; then
+                tail -10 "$STATE_DIR/$session.initial"
+            fi
+            echo " ──────────────────────────────────────────────────────────────────────────────"
+            echo ""
+            exit 0
+            ;;
+
+        error)
+            echo -e "${GREEN}╔════════════════════════════════════════════════════════════════╗${NC}"
+            echo -e "${GREEN}║${NC}  ${YELLOW}State Change Detected${NC}                                 ${GREEN}║${NC}"
+            echo -e "${GREEN}╚════════════════════════════════════════════════════════════════╝${NC}"
+            echo ""
+            echo -e "${CYAN}Session:${NC}   $session"
+            echo -e "${CYAN}Status:${NC}    ${RED}ERROR${NC}"
+            echo -e "${CYAN}Time:${NC}      0s (pre-existing state)"
+            echo ""
+            echo -e "${CYAN}Error output:${NC}"
+            echo " ──────────────────────────────────────────────────────────────────────────────"
+            if [[ -f "$STATE_DIR/$session.initial" ]]; then
+                grep -iE "error:|failed|exception|fatal|cannot|unable" "$STATE_DIR/$session.initial" | tail -10
+            fi
+            echo " ──────────────────────────────────────────────────────────────────────────────"
+            echo ""
+            exit 0
+            ;;
+
+        active)
+            # Continue to polling loop
+            ;;
+    esac
+done
+
+# Watch loop
+START_TIME=$(date +%s)
+ELAPSED=0
+
+while [[ $TIMEOUT -eq 0 || $ELAPSED -lt $TIMEOUT ]]; do
+    for session in "${SESSIONS[@]}"; do
+        # Detect current activity state
+        activity=$(detect_agent_activity "$session")
+
+        # Get initial activity if stored
+        initial_activity="active"
+        if [[ -f "$STATE_DIR/$session.activity" ]]; then
+            initial_activity=$(cat "$STATE_DIR/$session.activity")
+        else
+            echo "$activity" > "$STATE_DIR/$session.activity"
+            initial_activity="$activity"
+        fi
+
+        # Detect state change
+        if [[ "$activity" != "$initial_activity" ]]; then
+            case "$activity" in
+                completed)
+                    echo -e "${GREEN}╔════════════════════════════════════════════════════════════════╗${NC}"
+                    echo -e "${GREEN}║${NC}  ${YELLOW}State Change Detected${NC}                                 ${GREEN}║${NC}"
+                    echo -e "${GREEN}╚════════════════════════════════════════════════════════════════╝${NC}"
+                    echo ""
+                    echo -e "${CYAN}Session:${NC}   $session"
+                    echo -e "${CYAN}Status:${NC}    ${MAGENTA}COMPLETED${NC}"
+                    echo -e "${CYAN}Time:${NC}      ${ELAPSED}s"
+                    echo ""
+                    exit 0
+                    ;;
+
+                waiting_for_input)
+                    echo -e "${GREEN}╔════════════════════════════════════════════════════════════════╗${NC}"
+                    echo -e "${GREEN}║${NC}  ${YELLOW}State Change Detected${NC}                                 ${GREEN}║${NC}"
+                    echo -e "${GREEN}╚════════════════════════════════════════════════════════════════╝${NC}"
+                    echo ""
+                    echo -e "${CYAN}Session:${NC}   $session"
+                    echo -e "${CYAN}Status:${NC}    ${YELLOW}WAITING_FOR_INPUT${NC}"
+                    echo -e "${CYAN}Time:${NC}      ${ELAPSED}s"
+                    echo ""
+                    echo -e "${CYAN}Recent output:${NC}"
+                    echo " ──────────────────────────────────────────────────────────────────────────────"
+                    tmux capture-pane -t "$session" -p -S -10 2>/dev/null | tail -10
+                    echo " ──────────────────────────────────────────────────────────────────────────────"
+                    echo ""
+                    exit 0
+                    ;;
+
+                error)
+                    echo -e "${GREEN}╔════════════════════════════════════════════════════════════════╗${NC}"
+                    echo -e "${GREEN}║${NC}  ${YELLOW}State Change Detected${NC}                                 ${GREEN}║${NC}"
+                    echo -e "${GREEN}╚════════════════════════════════════════════════════════════════╝${NC}"
+                    echo ""
+                    echo -e "${CYAN}Session:${NC}   $session"
+                    echo -e "${CYAN}Status:${NC}    ${RED}ERROR${NC}"
+                    echo -e "${CYAN}Time:${NC}      ${ELAPSED}s"
+                    echo ""
+                    echo -e "${CYAN}Error output:${NC}"
+                    echo " ──────────────────────────────────────────────────────────────────────────────"
+                    tmux capture-pane -t "$session" -p -S -20 2>/dev/null | grep -iE "error:|failed|exception|fatal|cannot|unable" | tail -10
+                    echo " ──────────────────────────────────────────────────────────────────────────────"
+                    echo ""
+                    exit 0
+                    ;;
+
+                active)
+                    # Update stored activity state
+                    echo "$activity" > "$STATE_DIR/$session.activity"
+                    ;;
+            esac
+        fi
+    done
+
+    # Wait before next check
+    sleep "$INTERVAL"
+
+    # Update elapsed time
+    CURRENT_TIME=$(date +%s)
+    ELAPSED=$((CURRENT_TIME - START_TIME))
+
+    # Show progress indicator every 30 seconds
+    if [[ $((ELAPSED % 30)) -eq 0 && $ELAPSED -gt 0 ]]; then
+        echo -e "${CYAN}[${ELAPSED}s]${NC} Still watching ${#SESSIONS[@]} sessions..."
+    fi
+done
+
+# Timeout reached
+echo -e "${YELLOW}╔════════════════════════════════════════════════════════════════╗${NC}"
+echo -e "${YELLOW}║${NC}  ${CYAN}Watch Timeout${NC}                                          ${YELLOW}║${NC}"
+echo -e "${YELLOW}╚════════════════════════════════════════════════════════════════╝${NC}"
+echo ""
+echo -e "${CYAN}Timeout:${NC}  ${TIMEOUT}s reached with no state changes"
+echo ""
+echo -e "${YELLOW}All agents still running:${NC}"
+for session in "${SESSIONS[@]}"; do
+    if tmux has-session -t "$session" 2>/dev/null; then
+        echo -e "  ${CYAN}•${NC} $session"
+    fi
+done
+echo ""
+exit 2

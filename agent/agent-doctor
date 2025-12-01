@@ -67,7 +67,7 @@ check_tmux() {
             local session_count=$(tmux list-sessions 2>/dev/null | wc -l | tr -d ' ')
             info "tmux server running with $session_count session(s)"
         else
-            info "tmux server not running (will start on first spawn)"
+            info "tmux server not running (will start on first launch)"
         fi
     else
         check_fail "tmux not found"
@@ -80,29 +80,53 @@ check_tmux() {
 check_copilot() {
     section "GitHub Copilot CLI"
 
-    if command_exists gh; then
-        local gh_version=$(gh --version 2>&1 | head -1 | awk '{print $3}')
-        check_pass "gh CLI installed (version $gh_version)"
+    # Check for standalone copilot CLI binary
+    local copilot_bin=""
 
-        # Check if copilot extension is installed
-        if gh copilot --help &>/dev/null; then
-            check_pass "gh copilot extension available"
-
-            # Check authentication
-            if gh auth status &>/dev/null; then
-                check_pass "GitHub authenticated"
-            else
-                check_warn "GitHub not authenticated"
-                info "Run: gh auth login"
+    # Check environment override
+    if [[ -n "${COPILOT_BIN:-}" ]] && [[ -x "$COPILOT_BIN" ]]; then
+        copilot_bin="$COPILOT_BIN"
+    # Check NVM installations
+    elif [[ -d "$HOME/.nvm/versions/node" ]]; then
+        for node_version in "$HOME/.nvm/versions/node/"*/; do
+            local copilot_path="${node_version}bin/copilot"
+            if [[ -x "$copilot_path" ]]; then
+                copilot_bin="$copilot_path"
+                break
             fi
+        done
+    fi
+
+    # Check PATH as fallback
+    if [[ -z "$copilot_bin" ]] && command_exists copilot; then
+        copilot_bin=$(command -v copilot)
+    fi
+
+    if [[ -n "$copilot_bin" ]]; then
+        local copilot_version=$("$copilot_bin" --version 2>&1 | head -1)
+        check_pass "Copilot CLI found: $copilot_bin"
+        info "Version: $copilot_version"
+
+        # Check for --allow-all-paths support (required for agent autonomy)
+        if "$copilot_bin" --help 2>&1 | grep -q "allow-all-paths"; then
+            check_pass "Supports --allow-all-paths flag (v0.0.361+)"
         else
-            check_fail "gh copilot extension not installed"
-            info "Install: gh extension install github/gh-copilot"
+            check_fail "Missing --allow-all-paths support"
+            info "Requires GitHub Copilot CLI v0.0.361 or newer"
+            info "Install: npm install -g @github/copilot@latest"
             return 1
         fi
+
+        # Check for --allow-all-tools support
+        if "$copilot_bin" --help 2>&1 | grep -q "allow-all-tools"; then
+            check_pass "Supports --allow-all-tools flag"
+        else
+            check_warn "Missing --allow-all-tools support"
+        fi
     else
-        check_fail "gh CLI not found"
-        info "Install: brew install gh"
+        check_fail "Copilot CLI not found"
+        info "Install: npm install -g @github/copilot@latest"
+        info "Or set COPILOT_BIN environment variable"
         return 1
     fi
 }
@@ -139,7 +163,7 @@ check_directories() {
         local active_count=$(find "$METADATA_DIR" -maxdepth 1 -name "*.json" -type f 2>/dev/null | wc -l | tr -d ' ')
         info "Active metadata files: $active_count"
     else
-        check_warn "Metadata directory does not exist (will be created on first spawn)"
+        check_warn "Metadata directory does not exist (will be created on first launch)"
     fi
 
     if [[ -d "$METADATA_ARCHIVE_DIR" ]]; then
@@ -158,9 +182,9 @@ check_agent_scripts() {
 
     local expected_scripts=(
         "agent"
-        "agent-spawn"
+        "agent-launch"
         "agent-list"
-        "agent-watch"
+        "agent-await"
         "agent-status"
         "agent-read"
         "agent-send"

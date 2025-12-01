@@ -34,17 +34,22 @@ if [[ -z "$ALL_SESSIONS" ]]; then
     echo -e "${YELLOW}No agent sessions found${NC}"
     echo ""
     echo "Start a new session with:"
-    echo -e "  ${CYAN}agent spawn <project-dir> [task-file]${NC}"
+    echo -e "  ${CYAN}agent launch <project-dir> [task-file]${NC}"
     exit 0
 fi
 
-# Filter for copilot/agent sessions
+# Filter for copilot/agent sessions (only if tmux session exists)
 AGENT_SESSIONS=""
 while IFS= read -r session; do
+    # Check if tmux session actually exists
+    if ! tmux has-session -t "$session" 2>/dev/null; then
+        continue
+    fi
+
     # Check if it's an agent session (has metadata or running copilot)
     if has_metadata "$session"; then
         AGENT_SESSIONS="${AGENT_SESSIONS}${session}"$'\n'
-    elif tmux has-session -t "$session" 2>/dev/null; then
+    else
         # Check if running copilot via process detection
         PID=$(tmux list-panes -t "$session" -F "#{pane_pid}" 2>/dev/null | head -1)
         if [[ -n "$PID" ]]; then
@@ -63,7 +68,7 @@ if [[ -z "$AGENT_SESSIONS" ]]; then
     echo -e "${YELLOW}No active agent sessions${NC}"
     echo ""
     echo "Start a new session with:"
-    echo -e "  ${CYAN}agent spawn <project-dir> [task-file]${NC}"
+    echo -e "  ${CYAN}agent launch <project-dir> [task-file]${NC}"
     exit 0
 fi
 

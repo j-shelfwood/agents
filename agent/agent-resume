@@ -35,7 +35,7 @@ EXAMPLES:
 BEHAVIOR:
   - Reads metadata from original session
   - Cleans up stale tmux session if exists
-  - Spawns new session with same project and task
+  - Launches new session with same project and task
   - Preserves context with resume note
   - Links new session to original in metadata
 EOF
@@ -167,19 +167,19 @@ fi
 
 echo -e "${CYAN}New Session:${NC}      $NEW_SESSION_NAME"
 echo ""
-echo -e "${YELLOW}Spawning resumed session...${NC}"
+echo -e "${YELLOW}Launching resumed session...${NC}"
 
-# Spawn new session using agent spawn (use array to avoid eval)
-SPAWN_ARGS=("$SCRIPT_DIR/agent" "spawn")
+# Launch new session using agent launch (use array to avoid eval)
+LAUNCH_ARGS=("$SCRIPT_DIR/agent" "launch")
 
 if [[ -n "$TASK_FILE" && "$TASK_FILE" != "null" ]]; then
-    SPAWN_ARGS+=("$PROJECT_DIR" "$TASK_FILE" "--session" "$NEW_SESSION_NAME")
+    LAUNCH_ARGS+=("$PROJECT_DIR" "$TASK_FILE" "--session" "$NEW_SESSION_NAME")
 else
-    SPAWN_ARGS+=("$PROJECT_DIR" "--session" "$NEW_SESSION_NAME")
+    LAUNCH_ARGS+=("$PROJECT_DIR" "--session" "$NEW_SESSION_NAME")
 fi
 
-"${SPAWN_ARGS[@]}" || {
-    echo -e "${RED}Error: Failed to spawn new session${NC}"
+"${LAUNCH_ARGS[@]}" || {
+    echo -e "${RED}Error: Failed to launch new session${NC}"
     exit 1
 }
 

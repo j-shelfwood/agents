@@ -1,5 +1,5 @@
 #!/bin/bash
-# agent spawn - Spawn Agent Session
+# agent launch - Launch Agent Session
 # Creates detached tmux session with copilot running in full autonomy mode
 #
 # NON-INTERACTIVE: No prompts, no confirmations
@@ -19,10 +19,10 @@ NC='\033[0m'
 
 usage() {
     cat << EOF
-agent spawn - Spawn new agent session
+agent launch - Launch new agent session
 
 USAGE:
-  agent spawn <project-dir> [task-file] [--session <name>]
+  agent launch <project-dir> [task-file] [--session <name>]
 
 ARGUMENTS:
   project-dir   Path to project directory
@@ -33,9 +33,9 @@ OPTIONS:
   -h, --help         Show this help
 
 EXAMPLES:
-  agent spawn ~/projects/myapp
-  agent spawn ~/projects/myapp tasks/refactor.md
-  agent spawn ~/projects/myapp tasks/refactor.md --session my-task
+  agent launch ~/projects/myapp
+  agent launch ~/projects/myapp tasks/refactor.md
+  agent launch ~/projects/myapp tasks/refactor.md --session my-task
 
 BEHAVIOR:
   - Creates detached tmux session
@@ -78,7 +78,7 @@ done
 
 if [[ -z "$PROJECT_DIR" ]]; then
     echo -e "${RED}Error: project-dir required${NC}"
-    echo "Usage: agent spawn <project-dir> [task-file]"
+    echo "Usage: agent launch <project-dir> [task-file]"
     exit 1
 fi
 
@@ -113,18 +113,18 @@ fi
 # Prevent targeting sensitive system directories
 case "$PROJECT_DIR" in
     /|/bin|/sbin|/etc|/usr|/System|/Library|/private)
-        echo -e "${RED}Error: Cannot spawn agent in system directory: $PROJECT_DIR${NC}"
+        echo -e "${RED}Error: Cannot launch agent in system directory: $PROJECT_DIR${NC}"
         exit 1
         ;;
     $HOME/.shelfwood/agent*)
-        echo -e "${RED}Error: Cannot spawn agent in agent infrastructure directory${NC}"
+        echo -e "${RED}Error: Cannot launch agent in agent infrastructure directory${NC}"
         exit 1
         ;;
 esac
 
 # Warn if targeting home directory root
 if [[ "$PROJECT_DIR" == "$HOME" ]]; then
-    echo -e "${YELLOW}Warning: Spawning agent in home directory root${NC}"
+    echo -e "${YELLOW}Warning: Launching agent in home directory root${NC}"
     echo -e "${YELLOW}This gives agent access to all your files. Consider using a specific project directory.${NC}"
     # Don't exit, just warn
 fi
@@ -152,7 +152,7 @@ fi
 
 # Display info
 echo -e "${BLUE}╔════════════════════════════════════════════════════════════════╗${NC}"
-echo -e "${BLUE}║${NC}  ${GREEN}Spawning Agent${NC}                                              ${BLUE}║${NC}"
+echo -e "${BLUE}║${NC}  ${GREEN}Launching Agent${NC}                                             ${BLUE}║${NC}"
 echo -e "${BLUE}╚════════════════════════════════════════════════════════════════╝${NC}"
 echo ""
 echo -e "${CYAN}Session:${NC}   $SESSION_NAME"
@@ -162,8 +162,57 @@ if [[ -n "$TASK_FILE" ]]; then
 fi
 echo ""
 
+# Discover copilot binary with --allow-all-paths support
+find_copilot() {
+    # Use environment override if set
+    if [[ -n "${COPILOT_BIN:-}" ]] && [[ -x "$COPILOT_BIN" ]]; then
+        echo "$COPILOT_BIN"
+        return 0
+    fi
+
+    # Check NVM installations (prefer these - newer versions)
+    if [[ -d "$HOME/.nvm/versions/node" ]]; then
+        for node_version in "$HOME/.nvm/versions/node/"*/; do
+            copilot_path="${node_version}bin/copilot"
+            if [[ -x "$copilot_path" ]]; then
+                # Verify it supports --allow-all-paths
+                if "$copilot_path" --help 2>&1 | grep -q "allow-all-paths"; then
+                    echo "$copilot_path"
+                    return 0
+                fi
+            fi
+        done
+    fi
+
+    # Check PATH copilot as fallback
+    if command -v copilot &>/dev/null; then
+        copilot_path=$(command -v copilot)
+        if "$copilot_path" --help 2>&1 | grep -q "allow-all-paths"; then
+            echo "$copilot_path"
+            return 0
+        fi
+    fi
+
+    return 1
+}
+
+COPILOT_BIN=$(find_copilot)
+if [[ -z "$COPILOT_BIN" ]]; then
+    echo -e "${RED}Error: No compatible copilot installation found${NC}"
+    echo -e "${YELLOW}Requires GitHub Copilot CLI v0.0.361+ with --allow-all-paths support${NC}"
+    echo ""
+    echo "Install with npm:"
+    echo "  npm install -g @github/copilot@latest"
+    echo ""
+    echo "Or set COPILOT_BIN environment variable to specific installation"
+    exit 1
+fi
+
+COPILOT_VERSION=$("$COPILOT_BIN" --version 2>&1 | head -1)
+echo -e "${CYAN}Copilot:${NC}   $COPILOT_BIN ($COPILOT_VERSION)"
+
 # Create session with full autonomy
-tmux new-session -d -s "$SESSION_NAME" "copilot --add-dir \"$PROJECT_DIR\" --allow-all-tools --allow-all-paths \
+tmux new-session -d -s "$SESSION_NAME" "$COPILOT_BIN --add-dir \"$PROJECT_DIR\" --allow-all-tools --allow-all-paths \
   --deny-tool 'shell(git commit)' \
   --deny-tool 'shell(git push)' \
   --deny-tool 'shell(git merge)' \
@@ -205,9 +254,9 @@ Read the task file at $TASK_FILE and help me implement the tasks defined in it. 
     tmux send-keys -t "$SESSION_NAME" "$COMBINED_PROMPT" C-m
     sleep 2  # Give copilot time to receive the prompt
     tmux send-keys -t "$SESSION_NAME" Enter  # Second Enter to trigger execution
-    echo -e "${GREEN}✓ Agent spawned with task${NC}"
+    echo -e "${GREEN}✓ Agent launched with task${NC}"
 else
-    echo -e "${GREEN}✓ Agent spawned (waiting for input)${NC}"
+    echo -e "${GREEN}✓ Agent launched (waiting for input)${NC}"
 fi
 
 echo ""
