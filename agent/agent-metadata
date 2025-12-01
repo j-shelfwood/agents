@@ -6,8 +6,9 @@
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/../src/lib/config.sh"
 
-# Initialize directories
-init_agent_directories
+# Set legacy variable for compatibility
+METADATA_DIR="$AGENT_METADATA_DIR"
+METADATA_ARCHIVE_DIR="$AGENT_METADATA_ARCHIVE_DIR"
 
 # Validate session name format
 # Usage: validate_session_name SESSION_NAME

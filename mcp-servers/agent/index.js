@@ -14,8 +14,9 @@ const execAsync = promisify(exec);
 /**
  * Agent command resolution:
  * 1. AGENT_BIN_PATH environment variable (explicit override)
- * 2. XDG data directory: ~/.local/share/copilot-agent/bin/agent
- * 3. PATH lookup (assumes global install)
+ * 2. Development mode: Check if running from repository (mcp-servers/agent/index.js)
+ * 3. XDG data directory: ~/.local/share/copilot-agent/bin/agent
+ * 4. PATH lookup (assumes global install)
  *
  * Configure via:
  *   export AGENT_BIN_PATH="/path/to/copilot-agent/bin/agent"
@@ -25,7 +26,19 @@ const execAsync = promisify(exec);
  *     "AGENT_BIN_PATH": "/path/to/installation/bin/agent"
  *   }
  */
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
+import { existsSync } from 'fs';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+// Check if running from repository (dev mode)
+const devAgentPath = join(__dirname, '../../agent/agent');
+const devMode = existsSync(devAgentPath);
+
 const AGENT_CMD = process.env.AGENT_BIN_PATH
+  || (devMode ? devAgentPath : null)
   || process.env.HOME + '/.local/share/copilot-agent/bin/agent'
   || 'agent'; // Assumes in PATH
 

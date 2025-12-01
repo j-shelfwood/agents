@@ -5,12 +5,6 @@
 # This file can be sourced multiple times safely (idempotent)
 # Usage: source src/lib/config.sh
 
-# Prevent multiple sourcing side effects
-if [[ -n "${AGENT_CONFIG_LOADED:-}" ]]; then
-    return 0
-fi
-export AGENT_CONFIG_LOADED=1
-
 # XDG Base Directories (with fallbacks)
 # XDG_CONFIG_HOME: User-specific configuration files (~/.config)
 # XDG_DATA_HOME: User-specific data files (~/.local/share)
@@ -26,6 +20,15 @@ export AGENT_METADATA_DIR="${AGENT_METADATA_DIR:-$AGENT_HOME/metadata}"
 
 # AGENT_METADATA_ARCHIVE_DIR: Archive directory for completed sessions
 export AGENT_METADATA_ARCHIVE_DIR="${AGENT_METADATA_ARCHIVE_DIR:-$AGENT_METADATA_DIR/archive}"
+
+# Prevent multiple sourcing side effects (but allow idempotent operations)
+if [[ -n "${AGENT_CONFIG_LOADED:-}" ]]; then
+    # Already loaded - only ensure directories exist
+    [[ -d "$AGENT_METADATA_DIR" ]] || mkdir -p "$AGENT_METADATA_DIR"
+    [[ -d "$AGENT_METADATA_ARCHIVE_DIR" ]] || mkdir -p "$AGENT_METADATA_ARCHIVE_DIR"
+    return 0
+fi
+export AGENT_CONFIG_LOADED=1
 
 # AGENT_BIN_DIR: Directory for agent binaries (future use)
 export AGENT_BIN_DIR="${AGENT_BIN_DIR:-$AGENT_HOME/bin}"
@@ -94,4 +97,4 @@ init_agent_directories() {
 
 # Initialize directories on source (optional)
 # Comment out if you want to call init_agent_directories manually
-# init_agent_directories
+init_agent_directories
