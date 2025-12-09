@@ -1,0 +1,355 @@
+#!/usr/bin/env bash
+# agent-watchdog - Background daemon for agent lifecycle management
+#
+# Monitors all active agent sessions and enforces TTL policies:
+# - Detects inactive agents (no output changes)
+# - Auto-kills agents exceeding inactivity TTL
+# - Updates last_activity timestamps
+# - Respects importance levels and TTL settings
+
+set -e
+
+# Source configuration
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/../src/lib/config.sh"
+
+# Source metadata utilities
+source "$SCRIPT_DIR/agent-metadata"
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+NC='\033[0m'
+
+# Watchdog configuration
+CHECK_INTERVAL=60  # Check every minute
+LOG_FILE="${AGENT_HOME}/watchdog.log"
+
+# PID file for daemon management
+PID_FILE="${AGENT_HOME}/watchdog.pid"
+
+usage() {
+    cat << 'EOF'
+agent watchdog - Background daemon for agent lifecycle management
+
+USAGE:
+  agent watchdog start      Start watchdog daemon
+  agent watchdog stop       Stop watchdog daemon
+  agent watchdog status     Check if watchdog is running
+  agent watchdog restart    Restart watchdog daemon
+
+BEHAVIOR:
+  - Runs as background process
+  - Checks all agents every 60 seconds
+  - Detects inactivity by monitoring tmux pane output
+  - Auto-kills agents exceeding TTL threshold
+  - Logs all actions to: ~/.local/share/copilot-agent/watchdog.log
+
+TTL ENFORCEMENT:
+  - Agents with ttl_enabled=true are monitored
+  - Inactivity measured from last_activity timestamp
+  - Critical importance agents exempt from auto-kill
+  - Agents with ttl_seconds=0 never auto-killed
+
+EXAMPLES:
+  agent watchdog start      # Start monitoring in background
+  agent watchdog status     # Check if running
+  agent watchdog stop       # Stop monitoring
+  tail -f ~/.local/share/copilot-agent/watchdog.log  # View activity
+
+NOTES:
+  Watchdog survives terminal closure but not system restart.
+  Add to startup items for persistent monitoring.
+EOF
+    exit 0
+}
+
+log() {
+    local timestamp=$(date "+%Y-%m-%d %H:%M:%S")
+    echo "[$timestamp] $*" | tee -a "$LOG_FILE"
+}
+
+# Get tmux pane output hash for inactivity detection
+get_pane_output_hash() {
+    local session="$1"
+    if ! tmux has-session -t "$session" 2>/dev/null; then
+        echo ""
+        return 1
+    fi
+
+    # Capture last 50 lines of pane content and hash it
+    tmux capture-pane -t "$session" -p -S -50 2>/dev/null | md5sum | cut -d' ' -f1 || echo ""
+}
+
+# Update last_activity if pane output changed
+update_activity_if_changed() {
+    local session="$1"
+    local current_hash=$(get_pane_output_hash "$session")
+    local stored_hash=$(get_metadata "$session" "output_hash" 2>/dev/null || echo "")
+
+    if [[ -n "$current_hash" && "$current_hash" != "$stored_hash" ]]; then
+        # Output changed - update timestamps
+        local timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+        update_metadata "$session" "last_activity" "$timestamp"
+        update_metadata "$session" "output_hash" "$current_hash"
+        return 0  # Activity detected
+    fi
+
+    return 1  # No activity
+}
+
+# Check if agent should be auto-killed
+should_auto_kill() {
+    local session="$1"
+
+    # Check if TTL enabled
+    local ttl_enabled=$(get_metadata "$session" "ttl_enabled" 2>/dev/null || echo "false")
+    if [[ "$ttl_enabled" != "true" ]]; then
+        return 1  # TTL disabled
+    fi
+
+    # Check importance (critical agents exempt)
+    local importance=$(get_metadata "$session" "importance" 2>/dev/null || echo "normal")
+    if [[ "$importance" == "critical" ]]; then
+        return 1  # Critical agents never auto-killed
+    fi
+
+    # Get TTL threshold
+    local ttl_seconds=$(get_metadata "$session" "ttl_seconds" 2>/dev/null || echo "3600")
+    if [[ "$ttl_seconds" -le 0 ]]; then
+        return 1  # TTL disabled
+    fi
+
+    # Calculate inactivity duration
+    local last_activity=$(get_metadata "$session" "last_activity" 2>/dev/null)
+    if [[ -z "$last_activity" ]]; then
+        return 1  # No activity timestamp
+    fi
+
+    local last_activity_epoch=$(date -d "$last_activity" +%s 2>/dev/null || date -j -f "%Y-%m-%dT%H:%M:%SZ" "$last_activity" +%s 2>/dev/null)
+    local current_epoch=$(date +%s)
+    local inactive_seconds=$((current_epoch - last_activity_epoch))
+
+    if [[ $inactive_seconds -gt $ttl_seconds ]]; then
+        log "Agent $session inactive for ${inactive_seconds}s (TTL: ${ttl_seconds}s) - AUTO-KILL"
+        return 0  # Should kill
+    fi
+
+    return 1  # Not yet exceeded
+}
+
+# Watchdog main loop
+watchdog_loop() {
+    log "Watchdog daemon started (PID: $$, interval: ${CHECK_INTERVAL}s)"
+
+    while true; do
+        # Iterate all active sessions
+        list_metadata 2>/dev/null | while read -r session; do
+            [[ -z "$session" ]] && continue
+
+            # Check if session still exists
+            if ! tmux has-session -t "$session" 2>/dev/null; then
+                log "Agent $session - tmux session missing, cleaning metadata"
+                archive_metadata "$session"
+                continue
+            fi
+
+            # Update activity if output changed
+            if update_activity_if_changed "$session"; then
+                local ttl_seconds=$(get_metadata "$session" "ttl_seconds" 2>/dev/null || echo "0")
+                if [[ "$ttl_seconds" -gt 0 ]]; then
+                    log "Agent $session - activity detected, TTL reset"
+                fi
+            fi
+
+            # Check if should auto-kill
+            if should_auto_kill "$session"; then
+                log "Auto-killing $session (TTL exceeded)"
+
+                # Kill tmux session
+                tmux kill-session -t "$session" 2>/dev/null || true
+
+                # Update metadata status
+                update_metadata "$session" "status" "auto_killed_ttl"
+
+                # Archive metadata
+                archive_metadata "$session"
+            fi
+        done
+
+        sleep $CHECK_INTERVAL
+    done
+}
+
+# Start watchdog daemon
+start_watchdog() {
+    if [[ -f "$PID_FILE" ]]; then
+        local old_pid=$(cat "$PID_FILE")
+        if ps -p "$old_pid" > /dev/null 2>&1; then
+            echo -e "${YELLOW}Watchdog already running (PID: $old_pid)${NC}"
+            return 0
+        else
+            echo -e "${YELLOW}Removing stale PID file${NC}"
+            rm -f "$PID_FILE"
+        fi
+    fi
+
+    echo -e "${GREEN}Starting agent watchdog daemon...${NC}"
+
+    # Get absolute paths
+    local abs_script_dir="$(cd "$SCRIPT_DIR" && pwd)"
+    local abs_config_sh="$(cd "$SCRIPT_DIR/.." && pwd)/src/lib/config.sh"
+    local abs_metadata_sh="$abs_script_dir/agent-metadata"
+    local abs_watchdog_sh="$abs_script_dir/agent-watchdog"
+
+    # Start watchdog in background with absolute paths
+    nohup bash -c "
+set -e
+source '$abs_config_sh'
+source '$abs_metadata_sh'
+
+# Define watchdog loop inline
+watchdog_loop() {
+    echo \"[\$(date '+%Y-%m-%d %H:%M:%S')] Watchdog daemon started (PID: \$\$, interval: 60s)\" | tee -a '$LOG_FILE'
+
+    while true; do
+        # Source watchdog file to get helper functions
+        source '$abs_watchdog_sh' --source-only
+
+        # Iterate all active sessions
+        list_metadata 2>/dev/null | while read -r session; do
+            [[ -z \"\$session\" ]] && continue
+
+            # Check if session still exists
+            if ! tmux has-session -t \"\$session\" 2>/dev/null; then
+                echo \"[\$(date '+%Y-%m-%d %H:%M:%S')] Agent \$session - tmux session missing, cleaning metadata\" | tee -a '$LOG_FILE'
+                archive_metadata \"\$session\"
+                continue
+            fi
+
+            # Update activity if output changed
+            if update_activity_if_changed \"\$session\"; then
+                local ttl_seconds=\$(get_metadata \"\$session\" \"ttl_seconds\" 2>/dev/null || echo \"0\")
+                if [[ \"\$ttl_seconds\" -gt 0 ]]; then
+                    echo \"[\$(date '+%Y-%m-%d %H:%M:%S')] Agent \$session - activity detected, TTL reset\" | tee -a '$LOG_FILE'
+                fi
+            fi
+
+            # Check if should auto-kill
+            if should_auto_kill \"\$session\"; then
+                echo \"[\$(date '+%Y-%m-%d %H:%M:%S')] Auto-killing \$session (TTL exceeded)\" | tee -a '$LOG_FILE'
+
+                # Kill tmux session
+                tmux kill-session -t \"\$session\" 2>/dev/null || true
+
+                # Update metadata status
+                update_metadata \"\$session\" \"status\" \"auto_killed_ttl\"
+
+                # Archive metadata
+                archive_metadata \"\$session\"
+            fi
+        done
+
+        sleep 60
+    done
+}
+
+watchdog_loop
+" > "${AGENT_HOME}/watchdog.out" 2>&1 &
+
+    local watchdog_pid=$!
+    echo "$watchdog_pid" > "$PID_FILE"
+
+    sleep 1
+    if ps -p "$watchdog_pid" > /dev/null 2>&1; then
+        echo -e "${GREEN}✓ Watchdog started (PID: $watchdog_pid)${NC}"
+        echo -e "${CYAN}Log file: $LOG_FILE${NC}"
+        echo ""
+        echo "Monitor with: tail -f $LOG_FILE"
+    else
+        echo -e "${RED}✗ Watchdog failed to start${NC}"
+        echo "Check output: cat ${AGENT_HOME}/watchdog.out"
+        rm -f "$PID_FILE"
+        return 1
+    fi
+}
+
+# Stop watchdog daemon
+stop_watchdog() {
+    if [[ ! -f "$PID_FILE" ]]; then
+        echo -e "${YELLOW}Watchdog not running${NC}"
+        return 0
+    fi
+
+    local watchdog_pid=$(cat "$PID_FILE")
+
+    if ! ps -p "$watchdog_pid" > /dev/null 2>&1; then
+        echo -e "${YELLOW}Watchdog PID $watchdog_pid not found (stale PID file)${NC}"
+        rm -f "$PID_FILE"
+        return 0
+    fi
+
+    echo -e "${YELLOW}Stopping watchdog (PID: $watchdog_pid)...${NC}"
+    kill "$watchdog_pid" 2>/dev/null || true
+    rm -f "$PID_FILE"
+    echo -e "${GREEN}✓ Watchdog stopped${NC}"
+}
+
+# Check watchdog status
+status_watchdog() {
+    if [[ ! -f "$PID_FILE" ]]; then
+        echo -e "${RED}● Watchdog not running${NC}"
+        return 1
+    fi
+
+    local watchdog_pid=$(cat "$PID_FILE")
+
+    if ps -p "$watchdog_pid" > /dev/null 2>&1; then
+        echo -e "${GREEN}● Watchdog running (PID: $watchdog_pid)${NC}"
+        echo -e "${CYAN}Log file: $LOG_FILE${NC}"
+
+        if [[ -f "$LOG_FILE" ]]; then
+            echo ""
+            echo "Recent activity:"
+            tail -5 "$LOG_FILE"
+        fi
+        return 0
+    else
+        echo -e "${YELLOW}● Watchdog not running (stale PID file)${NC}"
+        rm -f "$PID_FILE"
+        return 1
+    fi
+}
+
+# Main command handler
+case "${1:-}" in
+    start)
+        start_watchdog
+        ;;
+    stop)
+        stop_watchdog
+        ;;
+    status)
+        status_watchdog
+        ;;
+    restart)
+        stop_watchdog
+        sleep 1
+        start_watchdog
+        ;;
+    --source-only)
+        # Just source functions, don't execute
+        ;;
+    -h|--help|help)
+        usage
+        ;;
+    *)
+        if [[ -n "${1:-}" ]]; then
+            echo -e "${RED}Error: Unknown command '$1'${NC}"
+            echo ""
+        fi
+        usage
+        ;;
+esac

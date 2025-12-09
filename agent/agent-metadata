@@ -38,7 +38,7 @@ validate_session_name() {
 }
 
 # Create metadata file for a session
-# Usage: create_metadata SESSION_NAME PROJECT_DIR TASK_FILE PID [IMPORTANCE] [NOTES]
+# Usage: create_metadata SESSION_NAME PROJECT_DIR TASK_FILE PID [IMPORTANCE] [NOTES] [TTL_MINUTES]
 create_metadata() {
     local session="$1"
     local project_dir="$2"
@@ -46,10 +46,14 @@ create_metadata() {
     local pid="$4"
     local importance="${5:-normal}"
     local notes="${6:-}"
+    local ttl_minutes="${7:-60}"
     local spawned_by="${CLAUDE_CODE_SESSION_ID:-manual}"
 
     local metadata_file="$METADATA_DIR/${session}.json"
     local timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+    # Convert TTL to seconds for internal use
+    local ttl_seconds=$((ttl_minutes * 60))
 
     cat > "$metadata_file" <<EOF
 {
@@ -63,6 +67,8 @@ create_metadata() {
   "tags": [],
   "pid": $pid,
   "last_activity": "$timestamp",
+  "ttl_seconds": $ttl_seconds,
+  "ttl_enabled": $([ "$ttl_minutes" -gt 0 ] && echo "true" || echo "false"),
   "health_checks": {
     "last_check": "$timestamp",
     "consecutive_failures": 0

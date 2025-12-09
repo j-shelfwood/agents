@@ -35,6 +35,7 @@ COMMANDS:
   attach <session-name>               Attach to agent interactively
   approve <session-name> [y|n]        Send y/n response to agent
   cleanup [options]                   Clean up stale sessions and metadata
+  watchdog <start|stop|status>        Manage lifecycle monitoring daemon
   metadata <subcommand>               Metadata management utilities
   doctor [--test]                     System health check and diagnostics
 

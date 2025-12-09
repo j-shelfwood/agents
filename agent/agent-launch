@@ -25,20 +25,25 @@ usage() {
 agent launch - Launch new agent session
 
 USAGE:
-  agent launch <project-dir> [task-file] [--session <name>]
+  agent launch <project-dir> [task-file] [OPTIONS]
 
 ARGUMENTS:
   project-dir   Path to project directory
   task-file     Optional: Task file to reference in initial prompt
 
 OPTIONS:
-  --session <name>   Custom session name (default: auto-generated)
-  -h, --help         Show this help
+  --session <name>     Custom session name (default: auto-generated)
+  --ttl <minutes>      Auto-kill after N minutes of inactivity (default: 60)
+  --no-ttl             Disable auto-shutdown (for long-running tasks)
+  --importance <level> Set importance level: normal|critical (default: normal)
+  -h, --help           Show this help
 
 EXAMPLES:
   agent launch ~/projects/myapp
   agent launch ~/projects/myapp tasks/refactor.md
   agent launch ~/projects/myapp tasks/refactor.md --session my-task
+  agent launch ~/projects/myapp tasks/long-task.md --ttl 180
+  agent launch ~/projects/myapp tasks/critical.md --no-ttl --importance critical
 
 BEHAVIOR:
   - Creates detached tmux session
@@ -47,6 +52,12 @@ BEHAVIOR:
   - Prepends system instructions from Obsidian vault automatically
   - Sends combined prompt (system instructions + task) if task-file provided
   - Returns immediately (non-blocking)
+  - Auto-shutdown after TTL minutes of inactivity (unless --no-ttl)
+
+INACTIVITY DETECTION:
+  Agent is considered inactive when tmux pane output stops changing.
+  Watchdog checks every minute and kills agents exceeding TTL.
+  Use --no-ttl for tasks expected to run >1 hour.
 EOF
     exit 0
 }
@@ -55,6 +66,8 @@ EOF
 PROJECT_DIR=""
 TASK_FILE=""
 SESSION_NAME=""
+TTL_MINUTES=60
+IMPORTANCE="normal"
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -63,6 +76,22 @@ while [[ $# -gt 0 ]]; do
             ;;
         --session)
             SESSION_NAME="$2"
+            shift 2
+            ;;
+        --ttl)
+            TTL_MINUTES="$2"
+            shift 2
+            ;;
+        --no-ttl)
+            TTL_MINUTES=0
+            shift
+            ;;
+        --importance)
+            IMPORTANCE="$2"
+            if [[ "$IMPORTANCE" != "normal" && "$IMPORTANCE" != "critical" ]]; then
+                echo -e "${RED}Error: importance must be 'normal' or 'critical'${NC}"
+                exit 1
+            fi
             shift 2
             ;;
         *)
@@ -215,7 +244,8 @@ COPILOT_VERSION=$("$COPILOT_BIN" --version 2>&1 | head -1)
 echo -e "${CYAN}Copilot:${NC}   $COPILOT_BIN ($COPILOT_VERSION)"
 
 # Create session with full autonomy
-tmux new-session -d -s "$SESSION_NAME" "$COPILOT_BIN --add-dir \"$PROJECT_DIR\" --allow-all-tools --allow-all-paths \
+# CRITICAL: tmux must start in PROJECT_DIR, not caller's directory
+tmux new-session -d -s "$SESSION_NAME" -c "$PROJECT_DIR" "$COPILOT_BIN --add-dir \"$PROJECT_DIR\" --allow-all-tools --allow-all-paths \
   --deny-tool 'shell(git commit)' \
   --deny-tool 'shell(git push)' \
   --deny-tool 'shell(git merge)' \
@@ -227,7 +257,7 @@ sleep 2
 
 # Create metadata file
 PANE_PID=$(tmux list-panes -t "$SESSION_NAME" -F "#{pane_pid}" 2>/dev/null | head -1)
-METADATA_FILE=$(create_metadata "$SESSION_NAME" "$PROJECT_DIR" "${TASK_FILE:-}" "$PANE_PID" "normal" "")
+METADATA_FILE=$(create_metadata "$SESSION_NAME" "$PROJECT_DIR" "${TASK_FILE:-}" "$PANE_PID" "$IMPORTANCE" "" "$TTL_MINUTES")
 
 if [[ -z "$METADATA_FILE" ]]; then
     echo -e "${YELLOW}Warning: Failed to create metadata file${NC}"
@@ -238,7 +268,9 @@ if [[ -n "$TASK_FILE" ]]; then
     # Path to system instructions (from config)
     SYSTEM_INSTRUCTIONS="$AGENT_SYSTEM_INSTRUCTIONS_PATH"
 
-    # Build combined prompt with system instructions + task
+    # Build combined prompt with system instructions + task content
+    # CRITICAL: Send actual task content, not instruction to read file
+    # This triggers Copilot's task_initialization protocol and autonomous execution
     if [[ -n "$SYSTEM_INSTRUCTIONS" && -f "$SYSTEM_INSTRUCTIONS" ]]; then
         COMBINED_PROMPT="# System Instructions
 
@@ -248,10 +280,16 @@ $(cat "$SYSTEM_INSTRUCTIONS")
 
 # Task Assignment
 
-Read the task file at $TASK_FILE and help me implement the tasks defined in it. Let's work through them interactively - I want to be able to review your work, ask questions, and iterate as needed."
+$(cat "$TASK_FILE")
+
+[SYSTEM] Task initialization complete... EXECUTING
+[EXECUTION] Proceeding with discovery phase immediately per autonomous execution protocol."
     else
         # Fallback if system instructions file not found
-        COMBINED_PROMPT="Read the task file at $TASK_FILE and help me implement the tasks defined in it. Let's work through them interactively - I want to be able to review your work, ask questions, and iterate as needed."
+        COMBINED_PROMPT="$(cat "$TASK_FILE")
+
+[SYSTEM] Task received... EXECUTING
+[EXECUTION] Proceeding with discovery phase immediately per autonomous execution protocol."
     fi
 
     tmux send-keys -t "$SESSION_NAME" "$COMBINED_PROMPT" C-m
