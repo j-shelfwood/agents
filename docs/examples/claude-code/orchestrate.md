@@ -98,6 +98,27 @@ For EACH independent unit, create `.agent/tasks/<descriptive-name>.md`:
 ## Objective
 {One-sentence goal that is measurable and testable}
 
+## Execution Mode
+
+**⚡ AUTONOMOUS EXECUTION REQUIRED ⚡**
+
+This task MUST be executed fully autonomously without requesting permission at intermediate steps:
+
+- ✓ Complete discovery phase and report findings
+- ✓ **Immediately proceed to implementation** after discovery
+- ✓ Execute all changes systematically
+- ✓ Run verification commands
+- ✓ Report completion with results
+
+**DO NOT ask "Should I proceed?" or "Which file should I start with?"** → Execute immediately after discovery.
+
+**ONLY pause for:**
+- ❌ ERROR conditions (build failures, test failures, missing dependencies)
+- ❌ Missing critical information not specified in task file
+- ❌ Confirmation prompts from underlying tools (press Enter/yes to continue)
+
+**Git operations:** All git commit/push/merge operations are BLOCKED by --deny-tool flags. You will receive permission errors if attempted - this is expected and correct.
+
 ## Discovery Phase (Agent MUST execute these first)
 Before making ANY changes, agent must enumerate all targets:
 
