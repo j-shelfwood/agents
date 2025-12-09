@@ -8,6 +8,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Autonomous execution directive**: Task file template enhancement for fully autonomous agent behavior
+  - New "Execution Mode" section in orchestrate.md task template
+  - Explicit directive: "⚡ AUTONOMOUS EXECUTION REQUIRED ⚡"
+  - Instructs agents to proceed without asking "Should I proceed?" after discovery
+  - Documents when agents should pause (errors, missing info, tool prompts only)
+  - Clarifies git operation blocks are expected behavior
+- **AUTONOMOUS_EXECUTION.md**: Comprehensive guide explaining autonomous execution
+  - System architecture and flag configuration (--allow-all-tools, --deny-tool)
+  - LLM behavior vs tooling capabilities explanation
+  - Task file template with complete autonomous directive
+  - Copilot CLI UI state indicators (∙ thinking, ◉ executing, > waiting)
+  - Troubleshooting guide for common issues
+  - Git safety philosophy and manual workflow rationale
+  - Validation checklist for task files
 - **await_agents tool**: Primary (and only) MCP tool for agent monitoring
 - **await command**: Primary (and only) CLI command (`agent await`) for monitoring agents
 - **Orchestration patterns documentation**: Comprehensive guide at `docs/ORCHESTRATION_PATTERNS.md`

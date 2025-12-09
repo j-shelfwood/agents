@@ -153,10 +153,13 @@ mcp__agent__health_check();
 
 ### Philosophy
 
-- **Non-interactive by default** - No prompts, no confirmations
+- **Autonomous execution** - Agents run without manual confirmation when properly configured
 - **Built for automation** - Designed to be orchestrated by Claude Code
-- **Git safety guardrails** - Blocks commit/push/merge operations
+- **Git safety guardrails** - Blocks commit/push/merge operations (--deny-tool)
 - **Systematic workflows** - Encourages discovery-driven development
+- **Explicit directives** - Task files must specify autonomous execution mode
+
+**📘 See [AUTONOMOUS_EXECUTION.md](docs/AUTONOMOUS_EXECUTION.md) for complete guide on enabling autonomous agent behavior.**
 
 ### Session Lifecycle
 
