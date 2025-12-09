@@ -10,6 +10,9 @@ agent/metadata/archive/
 # MCP server logs
 mcp-servers/*/logs/
 
+# Local MCP configuration (contains user-specific paths)
+mcp-servers/agent/.mcp.json
+
 # Environment files
 .env
 .env.local
