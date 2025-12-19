@@ -2,505 +2,559 @@
 description: Orchestrate parallel MCP agents for task implementation
 ---
 
-[SYSTEM] Orchestration mode activated for this request... ENGAGED
-[MODE] Strategic conductor - delegation only, no direct implementation
-[CRITICAL] await_agents() blocking enforcement... ACTIVE
+# Agent Orchestration
 
-## ORCHESTRATION PROTOCOL
+Orchestrate autonomous GitHub Copilot CLI agents via MCP tools.
 
-You are now in ORCHESTRATION MODE for the following task:
-
-**TASK:** $ARGUMENTS
-
-## ROLE TRANSFORMATION
-
-BEFORE_MODE:
-- You: Direct implementer using Edit/Write/Bash
-- Approach: Sequential, hands-on coding
-
-ORCHESTRATION_MODE:
-- You: Strategic orchestrator conducting autonomous agents
-- Approach: Discovery → Planning → Delegation → BLOCKING_SUPERVISION → Verification
-- FORBIDDEN: Direct code implementation (except task files in `.agent/tasks/`)
-
-## CRITICAL PATH: MANDATORY WORKFLOW
-
-This workflow is SEQUENTIAL and BLOCKING. Each phase MUST complete before proceeding.
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│ PHASE 1: DISCOVERY (Orchestrator performs)                  │
-│ PHASE 2: TASK DECOMPOSITION (Orchestrator plans)            │
-│ PHASE 3: TASK FILE CREATION (Orchestrator writes)           │
-│ PHASE 4: AGENT SPAWNING (Orchestrator launches)             │
-│ PHASE 5: ⚠️ BLOCKING SUPERVISION ⚠️ (MANDATORY WATCH)       │
-│ PHASE 6: VERIFICATION (Orchestrator confirms)               │
-│ PHASE 7: SYNTHESIS (Orchestrator reports)                   │
-└─────────────────────────────────────────────────────────────┘
-```
-
-### PHASE 1: DISCOVERY & ENUMERATION
-
-[DISCOVERY] Comprehensive codebase reconnaissance... REQUIRED
-
-You MUST enumerate ALL candidates before delegation:
-
-```
-DISCOVERY_OPERATIONS:
-⏺ Find all files requiring modification
-  → rg "pattern" --type lang -l | wc -l
-⏺ Identify existing patterns to replicate
-  → find . -name "*example*" -type f
-⏺ Map dependencies and integration points
-  → rg "import.*TargetModule" --type lang -l
-⏺ Assess scope complexity
-  → ls -R path/to/modules/ | grep -c "\.ext"
-```
-
-OUTPUT_REQUIREMENTS:
-- File count: {N} files identified
-- Pattern locations: {paths}
-- Scope assessment: {simple|moderate|complex}
-- Parallelization strategy: {N} independent units
-
-DO_NOT_PROCEED until you have concrete enumeration results.
-
-### PHASE 2: TASK DECOMPOSITION
-
-[STRATEGY] Breaking down into parallelizable units... ANALYZING
-
-DECOMPOSITION_CRITERIA:
-✓ Each task operates on independent files (no conflicts)
-✓ Each task has clear completion criteria
-✓ Each task includes discovery commands for agent enumeration
-✓ Each task references pattern/example to follow
-✓ Dependencies between tasks are minimal
-
-DECOMPOSITION_OUTPUT:
-```
-[UNITS] Identified {N} parallelizable tasks:
-1. Task A: {brief_description} → {file_count} files
-2. Task B: {brief_description} → {file_count} files
-3. Task C: {brief_description} → {file_count} files
-```
-
-### PHASE 3: TASK FILE CREATION
-
-[EXECUTION] Creating agent task specifications... WRITING
-
-For EACH independent unit, create `.agent/tasks/<descriptive-name>.md`:
-
-**MANDATORY TASK FILE STRUCTURE:**
-
-```markdown
-# Task: {Clear, Specific Title}
-
-## Objective
-{One-sentence goal that is measurable and testable}
-
-## Execution Mode
-
-**⚡ AUTONOMOUS EXECUTION REQUIRED ⚡**
-
-This task MUST be executed fully autonomously without requesting permission at intermediate steps:
-
-- ✓ Complete discovery phase and report findings
-- ✓ **Immediately proceed to implementation** after discovery
-- ✓ Execute all changes systematically
-- ✓ Run verification commands
-- ✓ Report completion with results
-
-**DO NOT ask "Should I proceed?" or "Which file should I start with?"** → Execute immediately after discovery.
-
-**ONLY pause for:**
-- ❌ ERROR conditions (build failures, test failures, missing dependencies)
-- ❌ Missing critical information not specified in task file
-- ❌ Confirmation prompts from underlying tools (press Enter/yes to continue)
-
-**Git operations:** All git commit/push/merge operations are BLOCKED by --deny-tool flags. You will receive permission errors if attempted - this is expected and correct.
-
-## Discovery Phase (Agent MUST execute these first)
-Before making ANY changes, agent must enumerate all targets:
-
-```bash
-# Find all files requiring modification
-rg "specific_pattern" --type {lang} -l
-
-# Count total candidates
-rg "specific_pattern" --type {lang} -l | wc -l
-
-# Review existing implementation for pattern
-cat path/to/reference/example.ext
-```
-
-**Agent must report enumeration results before proceeding.**
-
-## Context
-- Primary file(s): {absolute/path/to/file.ext}
-- Related files: {absolute/path/to/related.ext}
-- Pattern reference: {absolute/path/to/example.ext}
-- Integration points: {describe what this connects to}
-
-## Requirements
-Agent must implement the following systematically:
-
-1. {Specific, testable requirement}
-2. {Specific, testable requirement}
-3. {Specific, testable requirement}
-4. Follow exact pattern from {reference_file}
-
-## Verification Commands (Agent MUST run these before completion)
-After implementation, agent must verify:
-
-```bash
-# Run tests for modified code
-{test_command}
-
-# Verify pattern consistency
-rg "{verification_pattern}" path/to/modified/
-
-# Check for compilation/syntax errors
-{build_or_lint_command}
-```
-
-## Success Criteria
-- [ ] All files enumerated and processed
-- [ ] Pattern from {reference} replicated exactly
-- [ ] Tests pass: {specific_test_suite}
-- [ ] No compilation/lint errors
-- [ ] Verification commands executed and passed
-
-## Completion Confirmation
-Agent must report:
-1. Enumeration count: {N} files processed
-2. Test results: {pass/fail with output}
-3. Verification: {confirmation of pattern compliance}
-```
-
-**TASK FILE VALIDATION CHECKLIST:**
-- [ ] Discovery commands provided (agent can enumerate)
-- [ ] Absolute file paths specified
-- [ ] Pattern reference file cited
-- [ ] Verification commands included (tests, searches, builds)
-- [ ] Success criteria are testable
-- [ ] Agent has clear "definition of done"
-
-### PHASE 4: AGENT SPAWNING
-
-[EXECUTION] Launching autonomous agents... SPAWNING
-
-**SPAWN ALL AGENTS IN PARALLEL (single response):**
-
-```
-[SPAWN] Launching agent 1... task1.md
-[SPAWN] Launching agent 2... task2.md
-[SPAWN] Launching agent 3... task3.md
-[REGISTRY] {N} agents spawned... ACTIVE
-```
-
-Use `mcp__agent__launch_agent()` for each:
-
-```json
-{
-  "project_dir": "/absolute/path/to/project",
-  "task_file": "/absolute/path/.agent/tasks/task-name.md"
-}
-```
-
-**Tool Call Pattern:**
+## Available MCP Tools
 
 ```javascript
-// Spawn all agents in parallel
-mcp__agent__launch_agent({project_dir: "/path", task_file: "/path/task1.md"})
-mcp__agent__launch_agent({project_dir: "/path", task_file: "/path/task2.md"})
-mcp__agent__launch_agent({project_dir: "/path", task_file: "/path/task3.md"})
+// Launch agent with task file
+mcp__agent__launch_agent({
+  project_dir: "/absolute/path/to/project",
+  task_file: "/absolute/path/to/task.md"
+})
 
-// Then immediately supervise
+// Wait for state change (blocking - returns when agent completes/waits/errors)
 mcp__agent__await_agents({timeout: 300})
-// → Returns when any agent needs attention
+
+// Read agent output
+mcp__agent__read_agent_output({session_name: "agent-name", lines: 50})
+
+// Send message to agent
+mcp__agent__send_to_agent({session_name: "agent-name", message: "your instruction"})
+
+// Check agent status
+mcp__agent__check_agent_status({session_name: "agent-name"})
+
+// List all active agents
+mcp__agent__list_agents()
+
+// Terminate agent (when done)
+mcp__agent__kill_agent({session_name: "agent-name"})
 ```
-
-Note: Use MCP tools (mcp__agent__*), not Bash commands. If launch fails, check error message for path issues.
-
-### PHASE 5: ⚠️ BLOCKING SUPERVISION (MANDATORY) ⚠️
-
-```
-╔═══════════════════════════════════════════════════════════╗
-║  CRITICAL: THIS PHASE IS NOT OPTIONAL                     ║
-║  YOU MUST NOT REPORT TO USER UNTIL ALL AGENTS COMPLETE    ║
-║  YOU MUST CALL await_agents() IMMEDIATELY AFTER SPAWNING  ║
-╚═══════════════════════════════════════════════════════════╝
-```
-
-**After spawning, immediately call:**
-
-```javascript
-mcp__agent__await_agents({timeout: 300})
-```
-
-This blocks until an agent needs attention. Don't do anything else between spawn and await.
-
-**SUPERVISION LOOP (you MUST execute this):**
-
-```
-[MONITORING] Blocking until agent activity... AWAITING
-
-DO:
-  await_agents() → BLOCKS until agent needs attention
-
-  FOR EACH agent that needs attention:
-    [ATTENTION] Agent {name} requires action... READING
-
-    read_agent_output(session_name)
-
-    IF agent completed:
-      [REVIEW] Checking agent output... ANALYZING
-      - Did agent run discovery commands?
-      - Did agent execute verification commands?
-      - Did agent report test results?
-      [CLEANUP] Terminating completed agent... KILLING
-      kill_agent(session_name)
-
-    ELIF agent waiting for input:
-      [INTERACTION] Agent needs guidance... RESPONDING
-      send_to_agent(session_name, "your response")
-      [CONTINUE] Returning to watch mode... WATCHING
-
-    ELIF agent errored:
-      [ERROR] Diagnosing agent failure... ANALYZING
-      read_agent_output(session_name)
-      [DECISION] Assess: retry with better task or proceed without
-      kill_agent(session_name)
-      IF retry:
-        [RETRY] Respawning with improved task file... RELAUNCHING
-    END
-
-  IF more_agents_active:
-    [LOOP] Continuing supervision... AWAITING
-    → GOTO await_agents()
-
-END WHEN all_agents_terminated
-```
-
-**FORBIDDEN PATTERNS:**
-
-```diff
-❌ WRONG (DO NOT DO THIS):
-   spawn_agent(...)
-   spawn_agent(...)
-   "I've launched 2 agents to work on this task. They are now processing..."
-   [Response ends]
-
-✅ CORRECT (YOU MUST DO THIS):
-   spawn_agent(...)
-   spawn_agent(...)
-   await_agents() → [BLOCKS until agent needs attention]
-   read_agent_output(...) → [Review what agent did]
-   kill_agent(...) → [Cleanup completed agent]
-   await_agents() → [BLOCKS for next agent]
-   ...continue until ALL agents done...
-   [NOW proceed to verification phase]
-```
-
-Before reporting to user, confirm you completed all phases in sequence:
-Discovery → Task Files → Spawn → **Await Loop** → Verification → Report
-
-### PHASE 6: VERIFICATION (Orchestrator confirms completion)
-
-[VERIFICATION] Confirming agent work quality... TESTING
-
-After ALL agents complete, you MUST verify their work:
-
-```
-VERIFICATION_OPERATIONS:
-⏺ Review all agent outputs for completion claims
-  → read_agent_output(each_session) logs
-
-⏺ Independently verify tests were run
-  → Bash: run test suite again yourself
-  → Check exit codes
-
-⏺ Verify pattern consistency across all changes
-  → rg "verification_pattern" modified/paths/
-  → Compare against reference implementation
-
-⏺ Check for integration issues
-  → rg "import.*ModifiedModule" --type lang
-  → Verify no broken references
-
-⏺ Confirm scope completeness
-  → Compare initial enumeration count vs files modified
-  → rg "target_pattern" -l | wc -l should match expectations
-```
-
-**VERIFICATION OUTPUT:**
-
-```
-[VERIFICATION] Agent 1: {task_name}
-  ✓ Discovery executed: {N} files enumerated
-  ✓ Modifications complete: {N} files changed
-  ✓ Tests passed: {test_output_summary}
-  ✓ Pattern compliance: CONFIRMED
-
-[VERIFICATION] Agent 2: {task_name}
-  ✓ Discovery executed: {N} files enumerated
-  ✓ Modifications complete: {N} files changed
-  ✓ Tests passed: {test_output_summary}
-  ✓ Pattern compliance: CONFIRMED
-
-[INTEGRATION] Cross-agent consistency... VERIFIED
-[COMPLETENESS] Scope coverage: {N}/{N} targets processed
-```
-
-DO_NOT_PROCEED to synthesis until verification confirms success.
-
-### PHASE 7: SYNTHESIS (Report to user)
-
-[SYNTHESIS] Compiling orchestration results... REPORTING
-
-NOW you may report to the user:
-
-```
-[COMPLETE] Orchestration session finished... {N} agents
-[SCOPE] Total files modified: {count}
-[VERIFICATION] All tests passing... CONFIRMED
-[QUALITY] Pattern compliance verified... CONFIRMED
-
-AGENT_SUMMARY:
-1. Agent {name}: {task} → {outcome}
-2. Agent {name}: {task} → {outcome}
-3. Agent {name}: {task} → {outcome}
-
-CHANGES_OVERVIEW:
-{Summarize what was actually changed across all agents}
-
-VERIFICATION_RESULTS:
-{Report test results, pattern checks, scope confirmation}
-
-[CONTINUATION] {Next steps or questions for user}
-```
-
-## PROHIBITED BEHAVIORS (INSTANT PROTOCOL VIOLATION)
-
-```
-FORBIDDEN_ACTIONS:
-✗ Spawning agents then immediately reporting to user
-✗ Not calling await_agents() after spawn
-✗ Calling list_agents() instead of await_agents() for monitoring
-✗ Ending response while agents still active
-✗ Skipping verification phase
-✗ Using Edit/Write for code (only for task files in .agent/tasks/)
-✗ Creating vague task files without discovery/verification commands
-✗ Reporting completion without confirming tests passed
-```
-
-## STATE ENFORCEMENT
-
-**LEGAL STATE MACHINE:**
-
-```
-DISCOVERY → DECOMPOSITION → TASK_FILES → SPAWNING
-    ↓
-WATCHING ← [MANDATORY BLOCKING LOOP]
-    ↓
-VERIFICATION → SYNTHESIS → REPORT_TO_USER
-```
-
-**ILLEGAL TRANSITIONS (PROTOCOL VIOLATION):**
-
-```diff
-- SPAWNING → SYNTHESIS (skipped watching)
-- SPAWNING → REPORT_TO_USER (skipped watching and verification)
-- WATCHING → REPORT_TO_USER (skipped verification)
-```
-
-**CHECKPOINT VALIDATION:**
-
-At each phase transition, confirm previous phase completed:
-
-```
-[CHECKPOINT] Exiting DISCOVERY → Verify: enumeration complete
-[CHECKPOINT] Exiting TASK_FILES → Verify: all files created
-[CHECKPOINT] Exiting SPAWNING → Verify: await_agents() called next
-[CHECKPOINT] Exiting AWAITING → Verify: all agents terminated
-[CHECKPOINT] Exiting VERIFICATION → Verify: tests confirmed passing
-```
-
-## EXAMPLE: Complete Flow
-
-```
-User: "Add error handling to all API endpoints"
-
-// 1. Discovery
-⏺ Grep("app\\.(get|post|put|delete)", {type: "js", output_mode: "files_with_matches"})
-→ Found 24 files
-
-// 2. Planning
-[DECOMPOSITION] 3 parallel tasks:
-- GET endpoints (12 files)
-- POST/PUT endpoints (8 files)
-- DELETE endpoints (4 files)
-
-// 3. Create task files
-⏺ Write(".agent/tasks/api-get-error-handling.md", {content: "..."})
-⏺ Write(".agent/tasks/api-post-put-error-handling.md", {content: "..."})
-⏺ Write(".agent/tasks/api-delete-error-handling.md", {content: "..."})
-
-// 4. Spawn agents (in single message, parallel)
-⏺ mcp__agent__launch_agent({
-    project_dir: "/absolute/path/to/project",
-    task_file: "/absolute/path/.agent/tasks/api-get-error-handling.md",
-    session_name: "api-get"
-  })
-⏺ mcp__agent__launch_agent({...task: api-post-put...})
-⏺ mcp__agent__launch_agent({...task: api-delete...})
-
-// 5. Supervise (blocking loop - this is the critical part!)
-⏺ mcp__agent__await_agents({timeout: 300})
-→ Returns: agent "api-get" is WAITING_FOR_INPUT
-
-⏺ mcp__agent__read_agent_output({session_name: "api-get"})
-→ Shows what agent did and what it's asking
-
-⏺ mcp__agent__send_to_agent({session_name: "api-get", message: "Yes, proceed"})
-
-⏺ mcp__agent__await_agents({timeout: 300})
-→ Returns: agent "api-get" is COMPLETED
-
-⏺ mcp__agent__read_agent_output({session_name: "api-get"})
-→ Review completion status
-
-⏺ mcp__agent__kill_agent({session_name: "api-get"})
-
-⏺ mcp__agent__await_agents({timeout: 300})
-→ Returns: agent "api-post-put" is COMPLETED
-
-⏺ mcp__agent__read_agent_output({session_name: "api-post-put"})
-⏺ mcp__agent__kill_agent({session_name: "api-post-put"})
-
-⏺ mcp__agent__await_agents({timeout: 300})
-→ Returns: agent "api-delete" is COMPLETED
-
-⏺ mcp__agent__read_agent_output({session_name: "api-delete"})
-⏺ mcp__agent__kill_agent({session_name: "api-delete"})
-
-// 6. Verify
-⏺ Bash("npm test api/")
-→ All tests passing ✓
-
-// 7. Report
-All 24 API endpoints now include error handling. Tests passing.
-```
-
-## Common Issues
-
-**launch_agent fails:** Check copilot version (need v0.0.361+) and paths are absolute
-
-**await_agents finds no sessions:** Sessions died on spawn - check tmux list-sessions and copilot logs
-
-**Agent stuck:** Read output with read_agent_output(), kill if unrecoverable, continue with other agents
 
 ---
 
-[EXECUTION] Begin orchestration workflow for: $ARGUMENTS
-[REMINDER] await_agents() is MANDATORY after spawn - do not skip this step
+## ⚠️ CRITICAL: await_agents() Blocking Pattern
+
+**await_agents() is BLOCKING** - it waits until an agent state change occurs.
+
+### Understanding "Pre-existing State"
+
+When you call `await_agents()` immediately after launching agents:
+
+1. **First Call** - May return IMMEDIATELY with "pre-existing WAITING_FOR_INPUT"
+   - This is NORMAL - agents are at the task ingestion prompt
+   - They haven't started processing yet
+
+2. **Call await_agents() AGAIN** - Now it BLOCKS until agents transition states
+   - WAITING → ACTIVE (agents start processing)
+   - ACTIVE → COMPLETED (agents finish task)
+   - ACTIVE → WAITING_FOR_INPUT (agents need user input)
+   - ACTIVE → ERROR (agents encounter errors)
+
+3. **Loop continues** - Keep calling await_agents() until all agents complete
+
+### The Correct Loop Pattern
+
+```javascript
+// Launch agents
+mcp__agent__launch_agent({session_name: "agent1", ...})
+mcp__agent__launch_agent({session_name: "agent2", ...})
+mcp__agent__launch_agent({session_name: "agent3", ...})
+
+const sessions = ["agent1", "agent2", "agent3"]
+const results = {}
+
+// IMPORTANT: This while loop will call await_agents() multiple times
+// First call may return immediately (pre-existing state)
+// Subsequent calls will BLOCK until state changes
+while (sessions.length > 0) {
+  // BLOCKS here - waits for ANY agent to change state
+  const result = mcp__agent__await_agents({
+    sessions: sessions,
+    timeout: 600
+  })
+
+  // Find which agent(s) need attention
+  for (const agent of result.agents) {
+    if (agent.state === "COMPLETED") {
+      // Agent finished - read output
+      const output = mcp__agent__read_agent_output({
+        session_name: agent.session,
+        lines: 200
+      })
+      results[agent.session] = output
+
+      // Remove from monitoring list
+      sessions = sessions.filter(s => s !== agent.session)
+
+    } else if (agent.state === "WAITING_FOR_INPUT") {
+      // Agent needs input - read what it's asking
+      const output = mcp__agent__read_agent_output({
+        session_name: agent.session,
+        lines: 100
+      })
+
+      // Respond to agent
+      mcp__agent__send_to_agent({
+        session_name: agent.session,
+        message: "Your response here"
+      })
+      // Agent stays in sessions list - will await again
+
+    } else if (agent.state === "ERROR") {
+      // Agent failed - read error and cleanup
+      const output = mcp__agent__read_agent_output({
+        session_name: agent.session,
+        lines: 200
+      })
+      results[agent.session] = {error: output}
+
+      mcp__agent__kill_agent({session_name: agent.session})
+      sessions = sessions.filter(s => s !== agent.session)
+    }
+  }
+
+  // Loop back - await_agents() will BLOCK again
+}
+
+// All agents completed
+return results
+```
+
+### ❌ Common Mistakes
+
+**Mistake #1: Not Managing Session List**
+```javascript
+// ❌ WRONG - No sessions parameter causes infinite loop
+mcp__agent__launch_agent({session_name: "agent1", ...})
+mcp__agent__launch_agent({session_name: "agent2", ...})
+
+while (true) {
+  result = mcp__agent__await_agents({timeout: 600})  // ❌ No sessions param
+  // await discovers ALL agents every time
+  // Returns same completed agent repeatedly → INFINITE INSTANT RETURNS
+
+  if (result.agents[0].state === "WAITING_FOR_INPUT") {
+    // Handle agent but don't remove from metadata
+    // Next await() rediscovers it → instant return again
+  }
+}
+```
+
+**FIX:** Always pass explicit sessions list and remove handled agents
+```javascript
+// ✅ CORRECT - Manage session list explicitly
+const sessions = ["agent1", "agent2"]
+
+while (sessions.length > 0) {
+  result = mcp__agent__await_agents({
+    sessions: sessions,  // ✅ Explicit list
+    timeout: 600
+  })
+
+  if (result.agents[0].state === "WAITING_FOR_INPUT") {
+    sessions = sessions.filter(s => s !== result.agents[0].session)  // ✅ Remove
+  }
+}
+```
+
+**Mistake #2: Manual Polling**
+```javascript
+// ❌ WRONG - Manual polling defeats blocking behavior
+mcp__agent__launch_agent({...})
+result = mcp__agent__await_agents({timeout: 300})
+// Returns: "pre-existing WAITING_FOR_INPUT"
+
+// ❌ Then manually polling:
+output1 = mcp__agent__read_agent_output({...})  // Manual check
+sleep(5)
+output2 = mcp__agent__read_agent_output({...})  // Manual check
+sleep(5)
+output3 = mcp__agent__read_agent_output({...})  // Manual check
+```
+
+**DO THIS INSTEAD:**
+```javascript
+// ✅ CORRECT - Trust the blocking behavior
+mcp__agent__launch_agent({...})
+
+// Loop - await_agents() will block and wake when state changes
+while (agent_active) {
+  result = mcp__agent__await_agents({timeout: 300})
+  // Only returns when agent CHANGES state
+
+  output = mcp__agent__read_agent_output({...})
+  // Process output, respond if needed
+}
+```
+
+---
+
+## Example 1: Launch Agent for Code Review
+
+```javascript
+// User: "Review the authentication system"
+
+// 1. Create task file
+Write(".agent/tasks/auth-review.md", `
+# Task: Review Authentication System
+
+## Objective
+Analyze authentication implementation for security issues
+
+## Project Structure
+\`\`\`bash
+# Start with tree to understand layout
+tree --gitignore -L 3
+\`\`\`
+
+## Discovery
+\`\`\`bash
+# Find authentication files
+rg "authenticate|login|auth" --type php -l
+
+# Check password handling
+rg "password|bcrypt|Hash::" --type php -n
+
+# Find authorization checks
+rg "authorize|can\\(|cannot\\(" --type php -n
+\`\`\`
+
+## Analysis
+Document findings:
+- Security vulnerabilities
+- Missing authorization checks
+- Password handling issues
+- Session management concerns
+
+## Output
+Output findings directly in chat. Do NOT write report to .md file.
+Use cat/echo for formatted output:
+
+\`\`\`bash
+cat << 'EOF'
+# Authentication Review Results
+
+## Critical Issues
+- [List issues]
+
+## Recommendations
+- [List recommendations]
+EOF
+\`\`\`
+`)
+
+// 2. Launch agent
+mcp__agent__launch_agent({
+  project_dir: "/Users/you/projects/myapp",
+  task_file: "/Users/you/projects/myapp/.agent/tasks/auth-review.md"
+})
+
+// 3. Wait for completion
+result = mcp__agent__await_agents({timeout: 300})
+
+// 4. Read findings
+findings = mcp__agent__read_agent_output({
+  session_name: "agent-myapp-1234567",
+  lines: 200
+})
+
+// 5. Present to user
+"Authentication review complete.
+
+Findings:
+[findings summary]
+
+Agent still running with full codebase context.
+What would you like to do next?"
+```
+
+---
+
+## Example 2: Parallel Code Reviews
+
+```javascript
+// User: "3 agents to review different parts of the codebase"
+
+// 1. Create task files for different domains
+Write(".agent/tasks/review-backend.md", "Review backend architecture...")
+Write(".agent/tasks/review-frontend.md", "Review frontend components...")
+Write(".agent/tasks/review-database.md", "Review database queries...")
+
+// 2. Launch all agents in parallel
+mcp__agent__launch_agent({project_dir: "/project", task_file: ".agent/tasks/review-backend.md"})
+mcp__agent__launch_agent({project_dir: "/project", task_file: ".agent/tasks/review-frontend.md"})
+mcp__agent__launch_agent({project_dir: "/project", task_file: ".agent/tasks/review-database.md"})
+
+// 3. Wait for any agent to complete
+while (agents_remaining > 0) {
+  result = mcp__agent__await_agents({timeout: 300})
+
+  // Extract session name from result
+  session = extract_session_from_result(result)
+
+  // Read output
+  output = mcp__agent__read_agent_output({session_name: session, lines: 200})
+
+  // Store findings
+  findings[session] = output
+  agents_remaining--
+}
+
+// 4. Present all findings
+"All 3 reviews complete:
+- Backend: [summary]
+- Frontend: [summary]
+- Database: [summary]
+
+All agents preserved with context. Next action?"
+```
+
+---
+
+## Example 3: Agent Conversation
+
+```javascript
+// Agent finds issue and needs clarification
+
+// 1. Launch agent
+mcp__agent__launch_agent({project_dir: "/project", task_file: "tasks/refactor.md"})
+
+// 2. Agent completes and waits
+result = mcp__agent__await_agents({timeout: 300})
+// Returns: "WAITING_FOR_INPUT"
+
+// 3. Read what agent is asking
+output = mcp__agent__read_agent_output({session_name: "agent-123", lines: 50})
+// "Found 3 different approaches to error handling. Which pattern should I use?"
+
+// 4. Respond to agent
+mcp__agent__send_to_agent({
+  session_name: "agent-123",
+  message: "Use the try-catch pattern from BookingService.php"
+})
+
+// 5. Agent continues working
+result = mcp__agent__await_agents({timeout: 300})
+```
+
+---
+
+## Example 4: Sequential Implementation
+
+```javascript
+// User: "Implement error handling across all services"
+
+// 1. Launch agent with implementation task
+Write(".agent/tasks/add-error-handling.md", `
+# Task: Add Error Handling
+
+## Objective
+Add try-catch blocks to all service classes
+
+## Project Structure
+\`\`\`bash
+tree --gitignore -L 3
+\`\`\`
+
+## Discovery
+\`\`\`bash
+# Find service files
+find domain/ -name "*Service.php"
+
+# Check current error handling
+rg "try \\{" domain/ --type php -l
+\`\`\`
+
+## Implementation
+For each service file:
+1. Identify methods that need error handling
+2. Wrap in try-catch blocks
+3. Log errors appropriately
+4. Return error responses
+
+## Output
+Output summary directly in chat (do NOT write .md file):
+
+\`\`\`bash
+cat << 'EOF'
+# Error Handling Implementation
+
+## Files Modified
+- domain/Booking/Services/BookingService.php
+- domain/Payment/Services/PaymentService.php
+[... list all modified files]
+
+## Changes Made
+- Added try-catch to 15 service methods
+- Added error logging with context
+- Standardized error response format
+EOF
+\`\`\`
+
+## Git Safety
+- You can read git history: git log, git diff
+- You CANNOT commit: git commits are blocked
+`)
+
+mcp__agent__launch_agent({project_dir: "/project", task_file: "tasks/add-error-handling.md"})
+
+// 2. Monitor progress
+result = mcp__agent__await_agents({timeout: 600})
+
+// 3. Read results
+output = mcp__agent__read_agent_output({session_name: "agent-123", lines: 300})
+
+// 4. User reviews changes, then commits manually
+"Agent completed error handling implementation.
+
+Changes made to 15 service files.
+Review the changes with git diff and commit when ready."
+```
+
+---
+
+## Task File Guidelines
+
+**Simple structure:**
+
+```markdown
+# Task: {What to do}
+
+## Objective
+{Clear goal}
+
+## Project Structure
+\`\`\`bash
+# ALWAYS start with tree to understand project layout
+tree --gitignore -L 3
+\`\`\`
+
+## Discovery
+\`\`\`bash
+# Commands to find relevant files/patterns
+rg "pattern" --type lang -l
+find path/ -name "*.ext"
+\`\`\`
+
+## Analysis/Implementation
+{What to analyze or implement}
+
+## Output
+**IMPORTANT:** Output report directly in chat. Do NOT write to .md files.
+
+Generate report as terminal output:
+- Use echo/cat for formatted output
+- Include findings, metrics, recommendations
+- Structured markdown in terminal
+```
+
+**Critical Requirements:**
+
+1. **Start with tree command:**
+   ```bash
+   tree --gitignore -L 3  # ALWAYS first command
+   ```
+
+2. **Output reports in chat, NOT files:**
+   - ❌ DON'T: Write reports to .md files
+   - ✅ DO: Output reports directly as terminal/chat messages
+   - Use `cat << 'EOF'` for formatted multi-line output
+
+3. **Git Safety:**
+   - Agents CAN: `git log`, `git diff`, `git show`
+   - Agents CANNOT: `git commit`, `git push`, `git merge`
+   - These are blocked by `--deny-tool` flags
+
+**Keep it simple:**
+- No phase complexity
+- Clear discovery commands
+- Specific objective
+- Output directly to chat
+
+---
+
+## Common Patterns
+
+### Pattern: Wait and Read
+```javascript
+// Launch
+mcp__agent__launch_agent({...})
+
+// Wait for completion
+mcp__agent__await_agents({timeout: 300})
+
+// Read results
+mcp__agent__read_agent_output({session_name: "...", lines: 200})
+```
+
+### Pattern: Supervise Multiple Agents
+```javascript
+// Launch N agents
+for (task of tasks) {
+  mcp__agent__launch_agent({task_file: task})
+}
+
+// Collect results as they complete
+while (completed < total) {
+  result = mcp__agent__await_agents({timeout: 300})
+  session = extract_session(result)
+  findings[session] = mcp__agent__read_agent_output({session_name: session})
+  completed++
+}
+```
+
+### Pattern: Interactive Agent
+```javascript
+// Launch
+mcp__agent__launch_agent({...})
+
+// Wait for question
+result = mcp__agent__await_agents({timeout: 300})
+
+// Read question
+question = mcp__agent__read_agent_output({session_name: "..."})
+
+// Answer
+mcp__agent__send_to_agent({session_name: "...", message: "answer"})
+
+// Continue monitoring
+result = mcp__agent__await_agents({timeout: 300})
+```
+
+---
+
+## Key Points
+
+1. **Launch and forget** - Agents run autonomously in tmux sessions
+
+2. **await_agents() is BLOCKING** - It waits until state changes occur
+   - First call after launch may return immediately ("pre-existing state")
+   - **Call await_agents() AGAIN** in a loop - subsequent calls will block
+   - Returns only when agents transition states (WAITING→ACTIVE→COMPLETED)
+   - ❌ DON'T manually poll with read_agent_output() in a loop
+   - ✅ DO trust the blocking behavior and call await_agents() repeatedly
+
+3. **Use while loops** - Call await_agents() multiple times until all agents complete
+   - Pattern: `while (sessions.length > 0) { await_agents() }`
+   - Each iteration handles one state change
+   - Loop automatically continues monitoring remaining agents
+
+4. **Read output to see results** - Use read_agent_output after await_agents returns
+
+5. **Send messages for clarification** - If agent asks questions, respond via send_to_agent
+   - After responding, call await_agents() again to continue monitoring
+
+6. **Git is read-only** - Agents can analyze git history but cannot commit
+   - Blocked tools: git commit, git push, git merge
+
+7. **Keep agents alive** - They maintain codebase context, useful for follow-up tasks
+
+8. **Kill when done** - Use kill_agent when agent no longer needed
+
+---
+
+Now: Apply these patterns to the user's request.

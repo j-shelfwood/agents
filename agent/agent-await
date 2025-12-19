@@ -195,6 +195,10 @@ for session in "${SESSIONS[@]}"; do
             echo -e "${CYAN}Status:${NC}    ${MAGENTA}COMPLETED${NC}"
             echo -e "${CYAN}Time:${NC}      0s (pre-existing state)"
             echo ""
+
+            # Auto-cleanup: kill tmux session and archive metadata
+            tmux kill-session -t "$session" 2>/dev/null || true
+            archive_metadata "$session"
             exit 0
             ;;
 
@@ -210,10 +214,14 @@ for session in "${SESSIONS[@]}"; do
             echo -e "${CYAN}Recent output:${NC}"
             echo " ──────────────────────────────────────────────────────────────────────────────"
             if [[ -f "$STATE_DIR/$session.initial" ]]; then
-                tail -10 "$STATE_DIR/$session.initial"
+                tail -50 "$STATE_DIR/$session.initial"
             fi
             echo " ──────────────────────────────────────────────────────────────────────────────"
             echo ""
+
+            # Auto-cleanup: kill tmux session and archive metadata
+            tmux kill-session -t "$session" 2>/dev/null || true
+            archive_metadata "$session"
             exit 0
             ;;
 
@@ -233,6 +241,10 @@ for session in "${SESSIONS[@]}"; do
             fi
             echo " ──────────────────────────────────────────────────────────────────────────────"
             echo ""
+
+            # Auto-cleanup: kill tmux session and archive metadata
+            tmux kill-session -t "$session" 2>/dev/null || true
+            archive_metadata "$session"
             exit 0
             ;;
 
@@ -272,6 +284,10 @@ while [[ $TIMEOUT -eq 0 || $ELAPSED -lt $TIMEOUT ]]; do
                     echo -e "${CYAN}Status:${NC}    ${MAGENTA}COMPLETED${NC}"
                     echo -e "${CYAN}Time:${NC}      ${ELAPSED}s"
                     echo ""
+
+                    # Auto-cleanup: kill tmux session and archive metadata
+                    tmux kill-session -t "$session" 2>/dev/null || true
+                    archive_metadata "$session"
                     exit 0
                     ;;
 
@@ -286,9 +302,13 @@ while [[ $TIMEOUT -eq 0 || $ELAPSED -lt $TIMEOUT ]]; do
                     echo ""
                     echo -e "${CYAN}Recent output:${NC}"
                     echo " ──────────────────────────────────────────────────────────────────────────────"
-                    tmux capture-pane -t "$session" -p -S -10 2>/dev/null | tail -10
+                    tmux capture-pane -t "$session" -p -S -50 2>/dev/null | tail -50
                     echo " ──────────────────────────────────────────────────────────────────────────────"
                     echo ""
+
+                    # Auto-cleanup: kill tmux session and archive metadata
+                    tmux kill-session -t "$session" 2>/dev/null || true
+                    archive_metadata "$session"
                     exit 0
                     ;;
 
@@ -303,9 +323,13 @@ while [[ $TIMEOUT -eq 0 || $ELAPSED -lt $TIMEOUT ]]; do
                     echo ""
                     echo -e "${CYAN}Error output:${NC}"
                     echo " ──────────────────────────────────────────────────────────────────────────────"
-                    tmux capture-pane -t "$session" -p -S -20 2>/dev/null | grep -iE "error:|failed|exception|fatal|cannot|unable" | tail -10
+                    tmux capture-pane -t "$session" -p -S -50 2>/dev/null | tail -50
                     echo " ──────────────────────────────────────────────────────────────────────────────"
                     echo ""
+
+                    # Auto-cleanup: kill tmux session and archive metadata
+                    tmux kill-session -t "$session" 2>/dev/null || true
+                    archive_metadata "$session"
                     exit 0
                     ;;
 

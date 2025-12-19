@@ -183,17 +183,57 @@ detect_agent_activity() {
         return
     fi
 
-    # Capture recent output (last 20 lines for better context)
-    local output=$(tmux capture-pane -t "$session" -p -S -20 2>/dev/null || echo "")
+    # Capture recent output (last 50 lines for buffering detection)
+    local output=$(tmux capture-pane -t "$session" -p -S -50 2>/dev/null || echo "")
 
     if [[ -z "$output" ]]; then
         echo "active"
         return
     fi
 
-    # Check for waiting/confirmation patterns (most specific first)
-    if echo "$output" | grep -qE "Ctrl\+c Exit|Remaining requests:|> $"; then
-        # Copilot CLI prompt detected
+    # PRIORITY 1: Check for ACTIVE processing indicators FIRST
+    # These patterns indicate agent is actively working, even if prompt is visible
+    # This prevents false "waiting" detection during task ingestion/processing
+    if echo "$output" | grep -qE "\[SYSTEM\]|\[EXECUTION\]|\[ANALYSIS\]|\[DISCOVERY\]|\[STRATEGY\]|\[TARGET\]|\[PIVOT\]|\[CANDIDATES\]"; then
+        # Operational specification patterns = agent working
+        echo "active"
+        return
+    fi
+
+    # Check for tool execution indicators
+    if echo "$output" | tail -10 | grep -qE "<function_calls>|<invoke|Executing tool|Running command"; then
+        # Agent executing tools = active
+        echo "active"
+        return
+    fi
+
+    # Check for completion/stop markers (legacy patterns for backward compatibility)
+    # NOTE: Current orchestrate.md guidance does NOT include these patterns
+    # Kept for detecting agents that may organically use them or for old task files
+    if echo "$output" | grep -qE "\[PHASE_1_COMPLETE\]|\[TASK_COMPLETE\]|\[AWAITING_DIRECTIVE\]"; then
+        # Agent reached stop condition = waiting for next instruction
+        echo "waiting_for_input"
+        return
+    fi
+
+    # PRIORITY 2: Check for error indicators
+    if echo "$output" | grep -qiE "^error:|^fatal:|exception:|command failed|cannot|unable to"; then
+        echo "error"
+        return
+    fi
+
+    # PRIORITY 3: Check for waiting/confirmation patterns
+    # Only declare "waiting" if no active processing detected above
+    if echo "$output" | tail -5 | grep -qE "Ctrl\+c Exit|Remaining requests:|> $"; then
+        # Copilot prompt visible in last 5 lines - check if agent is buffering
+        # Agent may show prompt while thinking/buffering with operational patterns scrolled up
+        if echo "$output" | grep -qE "\[SYSTEM\]|\[EXECUTION\]|\[ANALYSIS\]|\[DISCOVERY\]|\[STRATEGY\]|\[TARGET\]|\[PIVOT\]|\[CANDIDATES\]|<function_calls>|<invoke"; then
+            # Operational patterns present in broader context = still processing (buffering)
+            echo "active"
+            return
+        fi
+
+        # Prompt visible with no recent activity patterns = genuinely waiting
         echo "waiting_for_input"
         return
     fi
@@ -201,12 +241,6 @@ detect_agent_activity() {
     if echo "$output" | grep -qiE "\(y/n\)|\(yes/no\)|continue\?|proceed\?|confirm\?|allow\?|approve\?"; then
         # Question/confirmation prompt
         echo "waiting_for_input"
-        return
-    fi
-
-    # Check for error indicators
-    if echo "$output" | grep -qiE "^error:|^fatal:|exception:|command failed|cannot|unable to"; then
-        echo "error"
         return
     fi
 

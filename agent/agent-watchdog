@@ -179,6 +179,15 @@ watchdog_loop() {
             fi
         done
 
+        # Clean up old Copilot session files (>2 hours old)
+        # Prevents unbounded accumulation in ~/.copilot/session-state/
+        if [[ -d "$HOME/.copilot/session-state" ]]; then
+            local cleaned=$(find "$HOME/.copilot/session-state" -name "*.jsonl" -mmin +120 -delete -print 2>/dev/null | wc -l)
+            if [[ $cleaned -gt 0 ]]; then
+                log "Cleaned up $cleaned old Copilot session files (>2h)"
+            fi
+        fi
+
         sleep $CHECK_INTERVAL
     done
 }

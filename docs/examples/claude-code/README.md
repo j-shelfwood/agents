@@ -16,16 +16,29 @@ that manages multiple autonomous GitHub Copilot CLI agents in parallel.
 
 ## Installation
 
-Copy the slash command to your Claude Code commands directory:
+**Recommended: Symlink for single source of truth**
+
+```bash
+# From this directory (docs/examples/claude-code/)
+mkdir -p ~/.claude/commands
+ln -sf $(pwd)/orchestrate.md ~/.claude/commands/orchestrate.md
+```
+
+This ensures changes to the repo version are automatically used by Claude Code.
+
+**Alternative: Manual copy**
 
 ```bash
 mkdir -p ~/.claude/commands
 cp orchestrate.md ~/.claude/commands/
 ```
 
+Note: With manual copy, you must copy again after each update.
+
 Verify installation:
 ```bash
 ls -la ~/.claude/commands/orchestrate.md
+# Should show: orchestrate.md -> /path/to/shelfwood-agents/docs/examples/claude-code/orchestrate.md
 ```
 
 ## Usage
