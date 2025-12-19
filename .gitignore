@@ -32,3 +32,6 @@ viz/logs/
 *.db
 *.db-shm
 *.db-wal
+
+# Session working directories
+.agent/

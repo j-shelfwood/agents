@@ -141,6 +141,25 @@ if [[ -n "$TASK_FILE" ]] && [[ ! -f "$TASK_FILE" ]]; then
     exit 1
 fi
 
+# Prevent path traversal attacks
+# Ensure task file is within project directory bounds
+if [[ -n "$TASK_FILE" ]]; then
+    TASK_FILE_REALPATH=$(realpath "$TASK_FILE" 2>/dev/null || echo "INVALID")
+    PROJECT_REALPATH=$(realpath "$PROJECT_DIR")
+
+    if [[ "$TASK_FILE_REALPATH" == "INVALID" ]]; then
+        echo -e "${RED}Error: Invalid task file path${NC}"
+        exit 1
+    fi
+
+    if [[ ! "$TASK_FILE_REALPATH" =~ ^"$PROJECT_REALPATH" ]]; then
+        echo -e "${RED}Error: Task file must be within project directory${NC}"
+        echo -e "${YELLOW}Task file: $TASK_FILE_REALPATH${NC}"
+        echo -e "${YELLOW}Project:   $PROJECT_REALPATH${NC}"
+        exit 1
+    fi
+fi
+
 # Validate project directory is safe
 # Prevent targeting sensitive system directories
 case "$PROJECT_DIR" in
@@ -295,7 +314,43 @@ $(cat "$TASK_FILE")
     tmux send-keys -t "$SESSION_NAME" "$COMBINED_PROMPT" C-m
     sleep 2  # Give copilot time to receive the prompt
     tmux send-keys -t "$SESSION_NAME" Enter  # Second Enter to trigger execution
-    echo -e "${GREEN}✓ Agent launched with task${NC}"
+
+    # Wait for agent to start processing before returning
+    # This prevents race condition where orchestrator calls await_agents()
+    # before agent has begun processing the task
+    echo -e "${CYAN}Waiting for agent to ingest task...${NC}"
+    MAX_WAIT=30
+    WAITED=0
+    PROCESSING_STARTED=false
+
+    while [[ $WAITED -lt $MAX_WAIT ]]; do
+        # Capture recent output to check processing state
+        CURRENT_OUTPUT=$(tmux capture-pane -t "$SESSION_NAME" -p -S -10 2>/dev/null || echo "")
+
+        # Check for processing indicators (operational specification patterns)
+        if echo "$CURRENT_OUTPUT" | grep -qE "\[SYSTEM\]|\[EXECUTION\]|\[ANALYSIS\]|\[DISCOVERY\]|\[STRATEGY\]|\[TARGET\]"; then
+            PROCESSING_STARTED=true
+            break
+        fi
+
+        # Check for tool execution (function_calls blocks)
+        if echo "$CURRENT_OUTPUT" | grep -qE "<function_calls>|<invoke"; then
+            PROCESSING_STARTED=true
+            break
+        fi
+
+        sleep 1
+        WAITED=$((WAITED + 1))
+    done
+
+    if [[ "$PROCESSING_STARTED" == "true" ]]; then
+        echo -e "${GREEN}✓ Agent launched with task (processing started after ${WAITED}s)${NC}"
+    elif [[ $WAITED -ge $MAX_WAIT ]]; then
+        echo -e "${YELLOW}⚠ Agent launched but processing confirmation timeout (${MAX_WAIT}s)${NC}"
+        echo -e "${YELLOW}  Agent may still be starting. Check with: agent status $SESSION_NAME${NC}"
+    else
+        echo -e "${GREEN}✓ Agent launched with task${NC}"
+    fi
 else
     echo -e "${GREEN}✓ Agent launched (waiting for input)${NC}"
 fi

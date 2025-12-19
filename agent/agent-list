@@ -32,7 +32,8 @@ TMUX_SESSIONS=$(tmux list-sessions -F "#{session_name}" 2>/dev/null || true)
 METADATA_SESSIONS=$(list_metadata)
 
 # Combine and deduplicate
-ALL_SESSIONS=$(echo -e "${TMUX_SESSIONS}\n${METADATA_SESSIONS}" | sort -u | grep -v '^$')
+# Note: grep -v may return 1 if no matches, use || true to prevent set -e exit
+ALL_SESSIONS=$(echo -e "${TMUX_SESSIONS}\n${METADATA_SESSIONS}" | sort -u | grep -v '^$' || true)
 
 if [[ -z "$ALL_SESSIONS" ]]; then
     echo -e "${YELLOW}No agent sessions found${NC}"
@@ -65,7 +66,7 @@ while IFS= read -r session; do
     fi
 done <<< "$ALL_SESSIONS"
 
-# Remove empty lines
+# Remove empty lines (already has || true, good!)
 AGENT_SESSIONS=$(echo "$AGENT_SESSIONS" | grep -v '^$' || true)
 
 if [[ -z "$AGENT_SESSIONS" ]]; then
