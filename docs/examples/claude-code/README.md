@@ -66,7 +66,7 @@ The slash command enforces a structured workflow:
 ## Documentation
 
 For complete orchestration patterns and examples, see:
-- [ORCHESTRATION_PATTERNS.md](../../ORCHESTRATION_PATTERNS.md)
+- [orchestrate.md](./orchestrate.md) - Agent orchestration patterns and examples
 - [Main README](../../../README.md)
 
 ## Customization

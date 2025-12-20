@@ -220,7 +220,7 @@ mcp__agent__await_agents({timeout: 600});
 - **Handles race conditions**: Detects pre-existing states automatically
 - **Multi-agent support**: Monitors all agents simultaneously
 
-**📚 See [docs/ORCHESTRATION_PATTERNS.md](docs/ORCHESTRATION_PATTERNS.md) for comprehensive patterns and examples.**
+**📚 See [docs/examples/claude-code/orchestrate.md](docs/examples/claude-code/orchestrate.md) for comprehensive patterns and examples.**
 
 ### Metadata Tracking
 

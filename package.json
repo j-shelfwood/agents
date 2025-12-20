@@ -16,7 +16,7 @@
     "agent": "./bin/agent"
   },
   "scripts": {
-    "test": "bash tests/orchestration-patterns.sh",
+    "test": "make test-all",
     "install": "./install.sh"
   },
   "repository": {
