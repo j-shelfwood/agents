@@ -67,6 +67,8 @@ create_metadata() {
   "tags": [],
   "pid": $pid,
   "last_activity": "$timestamp",
+  "last_output_hash": "",
+  "consecutive_stale_checks": 0,
   "ttl_seconds": $ttl_seconds,
   "ttl_enabled": $([ "$ttl_minutes" -gt 0 ] && echo "true" || echo "false"),
   "health_checks": {
@@ -171,81 +173,214 @@ detect_session_state() {
     fi
 }
 
-# Detect agent activity state
+# ============================================================================
+# OS-Level State Detection (Point 2 Architecture)
+# ============================================================================
+
+# Detect process activity via child process tree
+# Usage: detect_process_activity SESSION_NAME
+# Returns: EXECUTING_TOOL|THINKING|IDLE
+detect_process_activity() {
+    local session="$1"
+    local pane_pid=$(tmux list-panes -t "$session" -F "#{pane_pid}" 2>/dev/null | head -1)
+
+    if [[ -z "$pane_pid" ]]; then
+        echo "IDLE"
+        return
+    fi
+
+    # Count child processes (tools being executed)
+    local child_count=$(pgrep -P "$pane_pid" 2>/dev/null | wc -l | tr -d ' ')
+
+    if [[ $child_count -gt 0 ]]; then
+        echo "EXECUTING_TOOL"
+        return
+    fi
+
+    # No children - check CPU for thinking vs idle
+    local cpu_usage=$(ps -p "$pane_pid" -o %cpu= 2>/dev/null | awk '{print int($1)}')
+
+    if [[ -n "$cpu_usage" && $cpu_usage -gt 10 ]]; then
+        echo "THINKING"
+    else
+        echo "IDLE"
+    fi
+}
+
+# Detect cursor state (prompt visible at bottom)
+# Usage: detect_cursor_state SESSION_NAME
+# Returns: PROMPT_VISIBLE|NO_PROMPT
+detect_cursor_state() {
+    local session="$1"
+
+    # Get cursor position, pane dimensions, and last line in ONE tmux call (optimized)
+    local cursor_info=$(tmux display-message -p -t "$session" '#{cursor_y},#{pane_height}' 2>/dev/null)
+    if [[ -z "$cursor_info" ]]; then
+        echo "NO_PROMPT"
+        return
+    fi
+
+    IFS=',' read -r cursor_y pane_height <<< "$cursor_info"
+
+    # Only check bottom lines if cursor is near bottom (lenient threshold for trailing blanks)
+    if [[ $cursor_y -ge $((pane_height - 6)) ]]; then
+        # Check last non-empty line to handle trailing blanks from Copilot CLI
+        local last_nonempty=$(tmux capture-pane -t "$session" -p | grep -v '^[[:space:]]*$' | tail -1)
+        if [[ "$last_nonempty" =~ (^\>\ $|Ctrl\+c\ Exit|Remaining\ requests:) ]]; then
+            echo "PROMPT_VISIBLE"
+            return
+        fi
+    fi
+
+    echo "NO_PROMPT"
+}
+
+# Check for sentinel completion file
+# Usage: detect_completion_signal SESSION_NAME
+# Returns: COMPLETED|RUNNING
+detect_completion_signal() {
+    local session="$1"
+    local sentinel_file="${AGENT_HOME}/sentinel/${session}.completed"
+
+    if [[ -f "$sentinel_file" ]]; then
+        echo "COMPLETED"
+        return
+    fi
+
+    # Fallback: tmux session existence
+    if ! tmux has-session -t "$session" 2>/dev/null; then
+        echo "COMPLETED"
+        return
+    fi
+
+    echo "RUNNING"
+}
+
+# Get semantic output hash (strip ANSI codes and UI chrome)
+# Usage: get_semantic_output_hash SESSION_NAME
+get_semantic_output_hash() {
+    local session="$1"
+
+    if ! tmux has-session -t "$session" 2>/dev/null; then
+        echo ""
+        return 1
+    fi
+
+    # Capture, strip ANSI, filter UI chrome, hash
+    tmux capture-pane -t "$session" -p -S -50 2>/dev/null \
+        | sed 's/\x1b\[[0-9;]*m//g' \
+        | grep -v "^Remaining requests:" \
+        | grep -v "^Ctrl+c Exit" \
+        | md5sum 2>/dev/null | cut -d' ' -f1 || echo ""
+}
+
+# Transition state with logging
+# Usage: transition_state SESSION_NAME NEW_STATE
+transition_state() {
+    local session="$1"
+    local new_state="$2"
+    local old_state=$(get_metadata "$session" "status" 2>/dev/null || echo "unknown")
+
+    if [[ "$old_state" != "$new_state" ]]; then
+        update_metadata "$session" "status" "$new_state"
+        local timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+        # Log state transition (for debugging)
+        if [[ -n "${AGENT_HOME}" && -d "${AGENT_HOME}" ]]; then
+            echo "[$(date '+%Y-%m-%d %H:%M:%S')] State transition: $session: $old_state → $new_state" >> "${AGENT_HOME}/state-transitions.log" 2>/dev/null || true
+        fi
+    fi
+}
+
+# Unified state machine (replaces detect_agent_activity)
+# Usage: update_agent_state SESSION_NAME
+# Side effect: Updates metadata status field
+# Returns: Current state for convenience
+update_agent_state() {
+    local session="$1"
+
+    # 1. Check sentinel file first
+    local completion_signal=$(detect_completion_signal "$session")
+    if [[ "$completion_signal" == "COMPLETED" ]]; then
+        transition_state "$session" "completed"
+        echo "completed"
+        return 0
+    fi
+
+    # 2. Check process tree
+    local process_state=$(detect_process_activity "$session")
+    if [[ "$process_state" == "EXECUTING_TOOL" || "$process_state" == "THINKING" ]]; then
+        transition_state "$session" "active"
+        update_metadata "$session" "consecutive_stale_checks" "0"
+        update_metadata "$session" "last_activity" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        echo "active"
+        return 0
+    fi
+
+    # 3. Check for errors in recent output (still useful for error detection)
+    local recent_output=$(tmux capture-pane -t "$session" -p -S -10 2>/dev/null || echo "")
+    if echo "$recent_output" | grep -qiE "^error:|^fatal:|exception:|command failed"; then
+        transition_state "$session" "error"
+        echo "error"
+        return 0
+    fi
+
+    # 4. Check cursor position FIRST if process is IDLE (fast path for WAITING detection)
+    if [[ "$process_state" == "IDLE" ]]; then
+        local cursor_state=$(detect_cursor_state "$session")
+        if [[ "$cursor_state" == "PROMPT_VISIBLE" ]]; then
+            # Update hash and activity timestamp even when waiting
+            local current_hash=$(get_semantic_output_hash "$session")
+            if [[ -n "$current_hash" ]]; then
+                update_metadata "$session" "last_output_hash" "$current_hash"
+            fi
+            update_metadata "$session" "last_activity" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            update_metadata "$session" "consecutive_stale_checks" "0"
+            transition_state "$session" "waiting_for_input"
+            echo "waiting_for_input"
+            return 0
+        fi
+    fi
+
+    # 5. Check semantic hash for output changes
+    local current_hash=$(get_semantic_output_hash "$session")
+    local stored_hash=$(get_metadata "$session" "last_output_hash" 2>/dev/null || echo "")
+
+    if [[ -n "$current_hash" && "$current_hash" != "$stored_hash" ]]; then
+        # Output changed - still active
+        update_metadata "$session" "last_output_hash" "$current_hash"
+        update_metadata "$session" "last_activity" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        update_metadata "$session" "consecutive_stale_checks" "0"
+        transition_state "$session" "active"
+        echo "active"
+        return 0
+    fi
+
+    # 6. No changes detected - increment stale counter
+    local stale_count=$(get_metadata "$session" "consecutive_stale_checks" 2>/dev/null || echo "0")
+    stale_count=$((stale_count + 1))
+    update_metadata "$session" "consecutive_stale_checks" "$stale_count"
+
+    # 7. Determine state based on stale count
+    if [[ $stale_count -ge 5 ]]; then
+        # Stuck for 5+ checks - likely frozen
+        transition_state "$session" "stuck"
+        echo "stuck"
+    else
+        # Still within grace period - assume active
+        transition_state "$session" "active"
+        echo "active"
+    fi
+
+    return 0
+}
+
+# Legacy compatibility wrapper (for gradual migration)
 # Usage: detect_agent_activity SESSION_NAME
 # Returns: waiting_for_input|error|active|completed
 detect_agent_activity() {
     local session="$1"
-
-    # Check if session exists
-    if ! tmux has-session -t "$session" 2>/dev/null; then
-        echo "completed"
-        return
-    fi
-
-    # Capture recent output (last 50 lines for buffering detection)
-    local output=$(tmux capture-pane -t "$session" -p -S -50 2>/dev/null || echo "")
-
-    if [[ -z "$output" ]]; then
-        echo "active"
-        return
-    fi
-
-    # PRIORITY 1: Check for ACTIVE processing indicators FIRST
-    # These patterns indicate agent is actively working, even if prompt is visible
-    # This prevents false "waiting" detection during task ingestion/processing
-    if echo "$output" | grep -qE "\[SYSTEM\]|\[EXECUTION\]|\[ANALYSIS\]|\[DISCOVERY\]|\[STRATEGY\]|\[TARGET\]|\[PIVOT\]|\[CANDIDATES\]"; then
-        # Operational specification patterns = agent working
-        echo "active"
-        return
-    fi
-
-    # Check for tool execution indicators
-    if echo "$output" | tail -10 | grep -qE "<function_calls>|<invoke|Executing tool|Running command"; then
-        # Agent executing tools = active
-        echo "active"
-        return
-    fi
-
-    # Check for completion/stop markers (legacy patterns for backward compatibility)
-    # NOTE: Current orchestrate.md guidance does NOT include these patterns
-    # Kept for detecting agents that may organically use them or for old task files
-    if echo "$output" | grep -qE "\[PHASE_1_COMPLETE\]|\[TASK_COMPLETE\]|\[AWAITING_DIRECTIVE\]"; then
-        # Agent reached stop condition = waiting for next instruction
-        echo "waiting_for_input"
-        return
-    fi
-
-    # PRIORITY 2: Check for error indicators
-    if echo "$output" | grep -qiE "^error:|^fatal:|exception:|command failed|cannot|unable to"; then
-        echo "error"
-        return
-    fi
-
-    # PRIORITY 3: Check for waiting/confirmation patterns
-    # Only declare "waiting" if no active processing detected above
-    if echo "$output" | tail -5 | grep -qE "Ctrl\+c Exit|Remaining requests:|> $"; then
-        # Copilot prompt visible in last 5 lines - check if agent is buffering
-        # Agent may show prompt while thinking/buffering with operational patterns scrolled up
-        if echo "$output" | grep -qE "\[SYSTEM\]|\[EXECUTION\]|\[ANALYSIS\]|\[DISCOVERY\]|\[STRATEGY\]|\[TARGET\]|\[PIVOT\]|\[CANDIDATES\]|<function_calls>|<invoke"; then
-            # Operational patterns present in broader context = still processing (buffering)
-            echo "active"
-            return
-        fi
-
-        # Prompt visible with no recent activity patterns = genuinely waiting
-        echo "waiting_for_input"
-        return
-    fi
-
-    if echo "$output" | grep -qiE "\(y/n\)|\(yes/no\)|continue\?|proceed\?|confirm\?|allow\?|approve\?"; then
-        # Question/confirmation prompt
-        echo "waiting_for_input"
-        return
-    fi
-
-    # Default to active
-    echo "active"
+    update_agent_state "$session"
 }
 
 # Update last activity timestamp

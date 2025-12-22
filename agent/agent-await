@@ -29,7 +29,7 @@ Returns immediately when any agent completes, waits for input, or errors.
 
 OPTIONS:
   --timeout <seconds>    Maximum wait time (default: 300s/5min, 0=infinite)
-  --interval <seconds>   Polling interval (default: 3s)
+  --interval <seconds>   Polling interval (default: 1s)
   --sessions <names>     Await specific sessions only (comma-separated)
   -h, --help             Show this help message
 
@@ -89,7 +89,7 @@ EOF
 
 # Parse arguments
 TIMEOUT=300
-INTERVAL=3
+INTERVAL=1  # Reduced from 3s to 1s for faster state change detection
 SPECIFIC_SESSIONS=""
 
 while [[ $# -gt 0 ]]; do
@@ -180,10 +180,14 @@ for session in "${SESSIONS[@]}"; do
     fi
 done
 
-# CRITICAL: Check if any agent is already in waiting/error/completed state BEFORE entering watch loop
+# CRITICAL: Check if any agent is already in terminal state BEFORE entering watch loop
 # This handles race condition where agent reaches terminal state before await starts
 for session in "${SESSIONS[@]}"; do
-    activity=$(detect_agent_activity "$session")
+    # Update state using centralized detection
+    update_agent_state "$session" >/dev/null 2>&1
+
+    # Get state from metadata
+    activity=$(get_metadata "$session" "status" 2>/dev/null || echo "active")
 
     case "$activity" in
         completed)
@@ -195,10 +199,8 @@ for session in "${SESSIONS[@]}"; do
             echo -e "${CYAN}Status:${NC}    ${MAGENTA}COMPLETED${NC}"
             echo -e "${CYAN}Time:${NC}      0s (pre-existing state)"
             echo ""
-
-            # Auto-cleanup: kill tmux session and archive metadata
-            tmux kill-session -t "$session" 2>/dev/null || true
-            archive_metadata "$session"
+            echo -e "${YELLOW}Note:${NC} Watchdog will handle cleanup"
+            echo ""
             exit 0
             ;;
 
@@ -218,10 +220,6 @@ for session in "${SESSIONS[@]}"; do
             fi
             echo " ──────────────────────────────────────────────────────────────────────────────"
             echo ""
-
-            # Auto-cleanup: kill tmux session and archive metadata
-            tmux kill-session -t "$session" 2>/dev/null || true
-            archive_metadata "$session"
             exit 0
             ;;
 
@@ -241,14 +239,10 @@ for session in "${SESSIONS[@]}"; do
             fi
             echo " ──────────────────────────────────────────────────────────────────────────────"
             echo ""
-
-            # Auto-cleanup: kill tmux session and archive metadata
-            tmux kill-session -t "$session" 2>/dev/null || true
-            archive_metadata "$session"
             exit 0
             ;;
 
-        active)
+        active|running|stuck)
             # Continue to polling loop
             ;;
     esac
@@ -260,8 +254,11 @@ ELAPSED=0
 
 while [[ $TIMEOUT -eq 0 || $ELAPSED -lt $TIMEOUT ]]; do
     for session in "${SESSIONS[@]}"; do
-        # Detect current activity state
-        activity=$(detect_agent_activity "$session")
+        # Update state using centralized detection
+        update_agent_state "$session" >/dev/null 2>&1
+
+        # Get current state from metadata
+        activity=$(get_metadata "$session" "status" 2>/dev/null || echo "active")
 
         # Get initial activity if stored
         initial_activity="active"
@@ -284,10 +281,8 @@ while [[ $TIMEOUT -eq 0 || $ELAPSED -lt $TIMEOUT ]]; do
                     echo -e "${CYAN}Status:${NC}    ${MAGENTA}COMPLETED${NC}"
                     echo -e "${CYAN}Time:${NC}      ${ELAPSED}s"
                     echo ""
-
-                    # Auto-cleanup: kill tmux session and archive metadata
-                    tmux kill-session -t "$session" 2>/dev/null || true
-                    archive_metadata "$session"
+                    echo -e "${YELLOW}Note:${NC} Watchdog will handle cleanup"
+                    echo ""
                     exit 0
                     ;;
 
@@ -305,10 +300,6 @@ while [[ $TIMEOUT -eq 0 || $ELAPSED -lt $TIMEOUT ]]; do
                     tmux capture-pane -t "$session" -p -S -50 2>/dev/null | tail -50
                     echo " ──────────────────────────────────────────────────────────────────────────────"
                     echo ""
-
-                    # Auto-cleanup: kill tmux session and archive metadata
-                    tmux kill-session -t "$session" 2>/dev/null || true
-                    archive_metadata "$session"
                     exit 0
                     ;;
 
@@ -326,14 +317,10 @@ while [[ $TIMEOUT -eq 0 || $ELAPSED -lt $TIMEOUT ]]; do
                     tmux capture-pane -t "$session" -p -S -50 2>/dev/null | tail -50
                     echo " ──────────────────────────────────────────────────────────────────────────────"
                     echo ""
-
-                    # Auto-cleanup: kill tmux session and archive metadata
-                    tmux kill-session -t "$session" 2>/dev/null || true
-                    archive_metadata "$session"
                     exit 0
                     ;;
 
-                active)
+                active|running|stuck)
                     # Update stored activity state
                     echo "$activity" > "$STATE_DIR/$session.activity"
                     ;;

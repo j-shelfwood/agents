@@ -71,34 +71,8 @@ log() {
     echo "[$timestamp] $*" | tee -a "$LOG_FILE"
 }
 
-# Get tmux pane output hash for inactivity detection
-get_pane_output_hash() {
-    local session="$1"
-    if ! tmux has-session -t "$session" 2>/dev/null; then
-        echo ""
-        return 1
-    fi
-
-    # Capture last 50 lines of pane content and hash it
-    tmux capture-pane -t "$session" -p -S -50 2>/dev/null | md5sum | cut -d' ' -f1 || echo ""
-}
-
-# Update last_activity if pane output changed
-update_activity_if_changed() {
-    local session="$1"
-    local current_hash=$(get_pane_output_hash "$session")
-    local stored_hash=$(get_metadata "$session" "output_hash" 2>/dev/null || echo "")
-
-    if [[ -n "$current_hash" && "$current_hash" != "$stored_hash" ]]; then
-        # Output changed - update timestamps
-        local timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-        update_metadata "$session" "last_activity" "$timestamp"
-        update_metadata "$session" "output_hash" "$current_hash"
-        return 0  # Activity detected
-    fi
-
-    return 1  # No activity
-}
+# REMOVED: get_pane_output_hash() - replaced by get_semantic_output_hash() in agent-metadata
+# REMOVED: update_activity_if_changed() - replaced by update_agent_state() in agent-metadata
 
 # Check if agent should be auto-killed
 should_auto_kill() {
@@ -156,26 +130,50 @@ watchdog_loop() {
                 continue
             fi
 
-            # Update activity if output changed
-            if update_activity_if_changed "$session"; then
+            # Update agent state using centralized detection
+            update_agent_state "$session" >/dev/null 2>&1
+
+            # Get current state from metadata
+            local current_state=$(get_metadata "$session" "status" 2>/dev/null || echo "unknown")
+            local stale_count=$(get_metadata "$session" "consecutive_stale_checks" 2>/dev/null || echo "0")
+
+            # Log activity if state changed
+            if [[ "$current_state" == "active" && "$stale_count" -eq 0 ]]; then
                 local ttl_seconds=$(get_metadata "$session" "ttl_seconds" 2>/dev/null || echo "0")
                 if [[ "$ttl_seconds" -gt 0 ]]; then
                     log "Agent $session - activity detected, TTL reset"
                 fi
             fi
 
-            # Check if should auto-kill
+            # Check if stuck and should auto-kill
+            if [[ "$current_state" == "stuck" ]]; then
+                if [[ "$stale_count" -ge 10 ]]; then
+                    # Grace period: 10 checks * 60s = 10 minutes of inactivity
+                    log "Auto-killing $session (STUCK for ${stale_count} checks)"
+
+                    # Update metadata status
+                    update_metadata "$session" "status" "auto_killed_stuck"
+
+                    # Archive metadata
+                    archive_metadata "$session"
+
+                    # Kill tmux session (watchdog is now the ONLY killer)
+                    tmux kill-session -t "$session" 2>/dev/null || true
+                fi
+            fi
+
+            # Traditional TTL check (for waiting_for_input states)
             if should_auto_kill "$session"; then
                 log "Auto-killing $session (TTL exceeded)"
-
-                # Kill tmux session
-                tmux kill-session -t "$session" 2>/dev/null || true
 
                 # Update metadata status
                 update_metadata "$session" "status" "auto_killed_ttl"
 
                 # Archive metadata
                 archive_metadata "$session"
+
+                # Kill tmux session
+                tmux kill-session -t "$session" 2>/dev/null || true
             fi
         done
 
@@ -238,26 +236,49 @@ watchdog_loop() {
                 continue
             fi
 
-            # Update activity if output changed
-            if update_activity_if_changed \"\$session\"; then
+            # Update agent state using centralized detection
+            update_agent_state \"\$session\" >/dev/null 2>&1
+
+            # Get current state from metadata
+            local current_state=\$(get_metadata \"\$session\" \"status\" 2>/dev/null || echo \"unknown\")
+            local stale_count=\$(get_metadata \"\$session\" \"consecutive_stale_checks\" 2>/dev/null || echo \"0\")
+
+            # Log activity if state changed
+            if [[ \"\$current_state\" == \"active\" && \"\$stale_count\" -eq 0 ]]; then
                 local ttl_seconds=\$(get_metadata \"\$session\" \"ttl_seconds\" 2>/dev/null || echo \"0\")
                 if [[ \"\$ttl_seconds\" -gt 0 ]]; then
                     echo \"[\$(date '+%Y-%m-%d %H:%M:%S')] Agent \$session - activity detected, TTL reset\" | tee -a '$LOG_FILE'
                 fi
             fi
 
-            # Check if should auto-kill
+            # Check if stuck and should auto-kill
+            if [[ \"\$current_state\" == \"stuck\" ]]; then
+                if [[ \"\$stale_count\" -ge 10 ]]; then
+                    echo \"[\$(date '+%Y-%m-%d %H:%M:%S')] Auto-killing \$session (STUCK for \${stale_count} checks)\" | tee -a '$LOG_FILE'
+
+                    # Update metadata status
+                    update_metadata \"\$session\" \"status\" \"auto_killed_stuck\"
+
+                    # Archive metadata
+                    archive_metadata \"\$session\"
+
+                    # Kill tmux session
+                    tmux kill-session -t \"\$session\" 2>/dev/null || true
+                fi
+            fi
+
+            # Traditional TTL check (for waiting_for_input states)
             if should_auto_kill \"\$session\"; then
                 echo \"[\$(date '+%Y-%m-%d %H:%M:%S')] Auto-killing \$session (TTL exceeded)\" | tee -a '$LOG_FILE'
-
-                # Kill tmux session
-                tmux kill-session -t \"\$session\" 2>/dev/null || true
 
                 # Update metadata status
                 update_metadata \"\$session\" \"status\" \"auto_killed_ttl\"
 
                 # Archive metadata
                 archive_metadata \"\$session\"
+
+                # Kill tmux session
+                tmux kill-session -t \"\$session\" 2>/dev/null || true
             fi
         done
 
