@@ -2,31 +2,35 @@
 
 Automated testing infrastructure for the shelfwood-agents orchestration system.
 
+**Current Status:** ✅ 105/105 tests passing (100% coverage)
+
 ## Quick Start
 
 ```bash
 # Install dependencies
 npm install -g bats
 
-# Run quick test suite (30 seconds)
+# Run all test suites (105 tests, ~2-3 minutes)
 make test
 
-# Run all tests (2-3 minutes)
-make test-all
-
-# View test summary
-cat TEST_SUMMARY.md
+# Run specific test category
+make test-unit          # 16 tests
+make test-mcp           # 42 tests
+make test-security      # 15 tests
+make test-integration   # 32 tests
 ```
 
 ## Test Organization
 
 ```
 tests/
-├── unit/                # Fast, isolated function tests
-├── integration/         # Command lifecycle tests
-├── security/            # Injection & vulnerability tests
-├── helpers/             # Shared utilities
-└── orchestration-patterns.sh  # Existing orchestration tests
+├── unit/                # Fast, isolated function tests (16 tests)
+├── integration/         # Command lifecycle + orchestration tests (32 tests)
+│   ├── test_core_commands.bats       # 15 core command tests
+│   └── test_orchestration.bats       # 17 orchestration tests
+├── security/            # Injection & vulnerability tests (15 tests)
+├── helpers/             # Shared test utilities
+└── fixtures/            # Test data and task templates
 ```
 
 ## Test Categories

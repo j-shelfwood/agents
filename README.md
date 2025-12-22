@@ -236,16 +236,39 @@ Each agent session has metadata stored in `agent/metadata/<session-name>.json`:
   "status": "running",
   "importance": "normal",
   "pid": 12345,
-  "last_activity": "2025-11-14T18:10:00Z"
+  "last_activity": "2025-11-14T18:10:00Z",
+  "last_output_hash": "a1b2c3d4...",
+  "consecutive_stale_checks": 0,
+  "ttl_seconds": 3600,
+  "ttl_enabled": true
 }
 ```
 
+**Status values:**
+- `running` - Agent actively processing
+- `waiting_for_input` - Agent at prompt (detected via cursor position)
+- `completed` - Task finished (detected via sentinel file or output patterns)
+- `error` - Error state detected in output
+- `stuck` - No activity for extended period (>= 5 stale checks)
+- `active` - Default state while processing
+
 ## Testing
 
-Run orchestration pattern tests to validate correct behavior:
+Run automated test suite to validate system behavior:
 
 ```bash
-./tests/orchestration-patterns.sh
+# Run all tests (105 tests across 4 categories)
+make test
+
+# Or run specific test suites
+make test-unit          # 16 validation tests
+make test-mcp           # 42 Node.js MCP server tests
+make test-security      # 15 injection prevention tests
+make test-integration   # 32 core command + orchestration tests
+
+# Run tests individually
+bats tests/integration/test_orchestration.bats  # 17 orchestration tests
+bats tests/integration/test_core_commands.bats  # 15 core command tests
 ```
 
 Tests validate:

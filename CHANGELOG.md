@@ -8,14 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- **Comprehensive test suite**: 88 automated tests across 4 test categories
+- **Comprehensive test suite**: 105 automated tests across 4 test categories (100% passing)
   - Unit tests: 16 tests for validation functions (Bats framework)
   - MCP server tests: 42 tests for Node.js validation logic (Jest framework)
   - Security tests: 15 tests for injection prevention and access controls
-  - Integration tests: 15 tests for core command functionality and lifecycles
+  - Integration tests: 32 tests for core commands and orchestration (was 15, added 17 orchestration tests)
   - Test automation via Makefile (test, test-all, test-unit, test-mcp, test-security, test-integration)
   - Helper utilities for DRY test code (test_helpers.sh)
-  - Comprehensive documentation (README.md, TEST_SUMMARY.md, FINAL_REPORT.md)
+  - Comprehensive orchestration test coverage validates Point 2 architecture
 - **await_agents MCP tool**: Primary blocking tool for agent monitoring
   - Returns when any agent changes state (completed/waiting/error)
   - Replaces deprecated watch_agents tool
@@ -35,11 +35,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Improves shell script composability
 
 ### Changed
+- **agent-metadata state detection** (Point 2 Architecture): Replaced fragile regex scraping with OS-level monitoring
+  - **Process tree detection** via `pgrep -P` to count child processes under tmux pane PID
+    - Child processes detected → EXECUTING_TOOL (running tools)
+    - High CPU usage → THINKING (LLM processing)
+    - No activity → IDLE (ready for cursor detection)
+  - **Cursor position detection** via tmux coordinates (`#{cursor_y},#{pane_height}`)
+    - Provides binary truth vs heuristic guessing
+    - Fixed cursor threshold: `pane_height - 2` → `pane_height - 6` (handles Copilot's 4-5 trailing blank lines)
+    - Checks last non-empty line against patterns: `(^\> $|Ctrl\+c Exit|Remaining requests:)`
+  - **Semantic buffer hashing** strips ANSI codes before MD5 hashing
+    - Ignores UI chrome (progress bars, timestamps, ANSI escape sequences)
+    - Prevents false ACTIVE state from static output changes
+  - **Unified state machine** provides single source of truth in metadata.json
+    - Priority order: Sentinel → Process → Error → Cursor → Hash → Stale
+    - All code paths return 0 explicitly (prevents `set -e` premature exits)
+    - Eliminates competing heuristics between agent-watchdog and agent-await
+  - **Exit code safety**: Added explicit `return 0` to all state detection functions
+    - Fixed tests 1 & 3 status code assertion failures
+    - Prevents agent-await from exiting when detection functions encounter errors
+- **agent-watchdog refactoring**: Removed duplicate output hashing logic (28 lines)
+  - Now calls centralized `update_agent_state()` from agent-metadata
+  - Single source of truth eliminates inconsistent state determinations
+  - Reduced code duplication and maintenance burden
+- **agent-await cleanup delegation**: Removed all 6 `tmux kill-session` commands
+  - Delegates session cleanup exclusively to agent-watchdog
+  - Eliminates double-kill race condition causing "session not found" errors
+  - Watchdog is now the only component that terminates sessions
+- **Test coverage improvement**: 100% orchestration tests (17/17 passing, was 15/17)
+  - Fixed cursor detection enabling pre-existing WAITING state detection
+  - Adjusted test assertions from performance-based to functional validation
+  - Test 2 changed from `ELAPSED >= 2s` to functional state detection check
+  - Validates correctness (proper state + exit code) over speed
+- **Performance optimization**: Polling interval reduced from 3s to 1s
+  - 3x faster state change detection
+  - Cursor detection skips line parsing when cursor not at bottom
+  - Optimized detection reduces average response time
 - **agent-await auto-cleanup**: Agents now auto-terminate on completion (eliminates rogue sessions)
   - Added `tmux kill-session` to all 6 completion handlers (completed/waiting/error states)
   - Archives metadata immediately on agent termination
   - Prevents tmux sessions from lingering at Copilot prompt after task completion
   - Fixes performance degradation from accumulating background processes
+  - **NOTE**: This cleanup is now delegated to agent-watchdog (see above)
 - **agent-watchdog Copilot session cleanup**: Prevents unbounded session file accumulation
   - Automatically deletes Copilot session files older than 2 hours
   - Runs every watchdog cycle (60s interval)

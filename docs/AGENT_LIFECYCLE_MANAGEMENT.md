@@ -78,17 +78,19 @@ Stored in metadata:
 
 ### 2. Activity Detection
 
-Watchdog monitors agent activity by:
-1. Capturing last 50 lines of tmux pane output
-2. Hashing the output (md5sum)
-3. Comparing hash with previous check
-4. If hash changed → activity detected → update `last_activity` timestamp
+Watchdog monitors agent activity using semantic hashing:
+1. Captures tmux pane output
+2. Strips ANSI escape codes (colors, formatting)
+3. Removes blank lines
+4. Computes MD5 hash of clean output
+5. Compares hash with previous check
+6. If hash changed → activity detected → update `last_activity` timestamp
 
 **Activity triggers:**
 - Tool execution output
 - Command results
 - Agent thinking/response generation
-- Any text changes in tmux pane
+- Meaningful text changes (ignores UI chrome, progress bars, timestamps)
 
 ### 3. Inactivity Calculation
 
